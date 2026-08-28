@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import {
   ChartIcon,
   ChevronDown,
@@ -20,7 +21,7 @@ interface DashboardNavbarProps {
   onSignOut: () => void;
 }
 
-const NAV_ITEMS: { key: NavKey; label: string; icon: (c: { className?: string }) => React.ReactNode }[] = [
+const NAV_ITEMS: { key: NavKey; label: string; icon: (c: { className?: string }) => ReactNode }[] = [
   { key: "dashboard", label: "Dashboard", icon: HomeIcon },
   { key: "history", label: "History", icon: HistoryIcon },
   { key: "templates", label: "Templates", icon: TemplateIcon },
