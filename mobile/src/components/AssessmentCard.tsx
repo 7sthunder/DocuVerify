@@ -96,7 +96,7 @@ function CategoryCell({ c }: { c: CategoryStatus }) {
       </Tx>
       {c.available ? (
         <Tx size={font.xxs} color={colors.slate400}>
-          score {c.score.toFixed(2)}
+          {(c.score * 100).toFixed(1)}% contribution
         </Tx>
       ) : null}
     </View>

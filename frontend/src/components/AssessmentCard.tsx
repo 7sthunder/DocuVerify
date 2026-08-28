@@ -57,7 +57,7 @@ export default function AssessmentCard({ assessment }: { assessment: Assessment 
             <div className="text-sm font-bold text-slate-800 capitalize">
               {c.available ? c.label : "n/a"}
             </div>
-            {c.available && <div className="text-[11px] text-slate-400">score {c.score.toFixed(2)}</div>}
+            {c.available && <div className="text-[11px] text-slate-400">{(c.score * 100).toFixed(1)}% contribution</div>}
           </div>
         ))}
       </div>

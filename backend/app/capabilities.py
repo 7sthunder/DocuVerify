@@ -165,7 +165,7 @@ class _EmbeddedImagesAdapter:
 
 def default_registry() -> Registry:
     reg = Registry()
-    from .verifiers import CertificateVerifier, InvoiceVerifier, UniversalVerifier
+    from .verifiers import CertificateVerifier, InvoiceVerifier, MedicalVerifier, UniversalVerifier
 
     for analyzer in ANALYZERS:
         cost = "expensive" if analyzer.category == "visual" else ("moderate" if analyzer.category == "layout" else "cheap")
@@ -198,6 +198,14 @@ def default_registry() -> Registry:
         scope="domain",
         cost="cheap",
         domain_types={"invoice", "receipt"},
+    )
+    reg.register(
+        name="medical_verifier",
+        label="medical_verifier",
+        runner=MedicalVerifier(),
+        scope="domain",
+        cost="cheap",
+        domain_types={"medical"},
     )
     reg.register(
         name="universal_verifier",

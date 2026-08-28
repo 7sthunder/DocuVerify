@@ -138,6 +138,7 @@ DOC_TYPES: dict[str, DocumentType] = {
                 ("physician", 2.5), ("hospital", 1.5), ("referral", 1.5),
                 ("medical certificate", 4.0),
             ],
+            ["medical_verifier"],
         ),
         DocumentType(
             "contract",
@@ -174,7 +175,7 @@ DOC_TYPES: dict[str, DocumentType] = {
     ]
 }
 
-VERIFIER_ALIASES = {"certificate_verifier", "invoice_verifier", "universal_verifier"}
+VERIFIER_ALIASES = {"certificate_verifier", "invoice_verifier", "medical_verifier", "universal_verifier"}
 
 
 def get_type(type_id: str) -> DocumentType:

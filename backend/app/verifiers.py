@@ -13,8 +13,10 @@ import re
 from datetime import datetime
 
 from .document import Document
-from .entities import _MONEY_RE, _money_value
+from .entities import _MONEY_RE, _money_value, full_text
 from .schemas import Finding, Region
+from .analyzers.base import _next_id
+from .analyzers.base import _next_id
 
 _TAX_LABEL_RE = re.compile(
     r"\b(cgst|sgst|igst|vat|gst|tax|service charge)\b(?![^\n]{0,12}\bincl)", re.I
@@ -474,6 +476,176 @@ class InvoiceVerifier:
         if box is None:
             return None
         return Region(page=box.page, x=box.x, y=box.y, w=box.w, h=box.h)
+
+
+class MedicalVerifier:
+    """Consistency checks for medical/hospital documents:
+    date ordering, dosage/medication consistency, and charge totals."""
+
+    name = "medical_verifier"
+    category = "semantic"
+
+    def analyze(self, doc: Document) -> list[Finding]:
+        findings: list[Finding] = []
+        text = full_text(doc).lower()
+        findings.extend(self._check_date_consistency(text))
+        findings.extend(self._check_charge_consistency(text))
+        findings.extend(self._check_medication_consistency(text))
+        return findings
+
+    def _check_date_consistency(self, text: str) -> list[Finding]:
+        findings: list[Finding] = []
+        date_pattern = re.compile(
+            r"(?P<label>date\s+(?:of\s+)?(?:admission|discharge|issue|prescription|birth|report))"
+            r"\s*[:\-]?\s*(?P<date>\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{4})",
+            re.I,
+        )
+        dates: list[tuple[str, datetime]] = []
+        for m in date_pattern.finditer(text):
+            label = m.group("label").lower()
+            date_str = m.group("date")
+            dt = self._parse_date(date_str)
+            if dt:
+                dates.append((label, dt))
+        if len(dates) < 2:
+            return findings
+        for i in range(len(dates) - 1):
+            label_a, dt_a = dates[i]
+            label_b, dt_b = dates[i + 1]
+            if "admission" in label_a and "discharge" in label_b and dt_a > dt_b:
+                findings.append(
+                    Finding(
+                        id=_next_id("med"),
+                        category=self.category,
+                        module=self.name,
+                        severity="medium",
+                        score=0.6,
+                        confidence=0.8,
+                        evidence=[
+                            f"Date of admission {dt_a.date()} is after discharge date {dt_b.date()}",
+                        ],
+                        explanation=(
+                            "The stated discharge date precedes the admission date, "
+                            "which is chronologically impossible and indicates an inconsistency "
+                            "in the medical document."
+                        ),
+                        fields={
+                            "admission_date": dt_a.date().isoformat(),
+                            "discharge_date": dt_b.date().isoformat(),
+                        },
+                    )
+                )
+        return findings
+
+    def _check_charge_consistency(self, text: str) -> list[Finding]:
+        findings: list[Finding] = []
+        charge_pattern = re.compile(
+            r"(?P<item>[A-Za-z][A-Za-z\s]{2,40}?)\s*(?:\s*[×x]\s*(?P<qty>\d+))?\s*[:\-]?\s*(?:Rs\.?\s*)?(?P<amount>\d[\d,]*(?:\.\d{1,2})?)\s*$",
+            re.I | re.M,
+        )
+        total_pattern = re.compile(
+            r"(?:total|grand\s+total|amount\s+due|balance\s+due)\s*[:\-]?\s*(?:Rs\.?\s*)?(\d[\d,]*(?:\.\d{1,2})?)",
+            re.I | re.M,
+        )
+        amounts: list[float] = []
+        for m in charge_pattern.finditer(text):
+            try:
+                amt = float(m.group("amount").replace(",", ""))
+                if amt > 0:
+                    amounts.append(amt)
+            except ValueError:
+                continue
+        total_match = total_pattern.search(text)
+        if not total_match or not amounts:
+            return findings
+        try:
+            stated_total = float(total_match.group(1).replace(",", ""))
+        except ValueError:
+            return findings
+        computed = sum(amounts)
+        tol = max(0.05, 0.005 * abs(stated_total))
+        if abs(computed - stated_total) > tol:
+            findings.append(
+                Finding(
+                    id=_next_id("med"),
+                    category=self.category,
+                    module=self.name,
+                    severity="medium",
+                    score=0.6,
+                    confidence=0.85,
+                    evidence=[
+                        f"Sum of itemized charges: {round(computed, 2)}",
+                        f"Stated total: {stated_total}",
+                        f"Difference: {round(abs(computed - stated_total), 2)}",
+                    ],
+                    explanation=(
+                        "The sum of itemized charges does not match the stated total. "
+                        "A discrepancy in the billing section of a medical document can "
+                        "indicate edited or inconsistent figures."
+                    ),
+                    fields={
+                        "computed_total": round(computed, 2),
+                        "stated_total": stated_total,
+                        "difference": round(abs(computed - stated_total), 2),
+                    },
+                )
+            )
+        return findings
+
+    def _check_medication_consistency(self, text: str) -> list[Finding]:
+        findings: list[Finding] = []
+        med_pattern = re.compile(
+            r"(?P<med>[A-Za-z][A-Za-z\s]{2,30}?)\s*(?:\s*[×x]\s*(?P<qty>\d+))?\s*(?:(?P<dose>\d+\.?\d*)\s*(?P<unit>mg|ml|g|mcg|units)?)\s*(?:per\s*(?P<freq>\w+))?",
+            re.I,
+        )
+        dosage_issues = 0
+        for m in med_pattern.finditer(text):
+            dose_val = m.group("dose")
+            if dose_val and m.group("unit"):
+                try:
+                    dose = float(dose_val)
+                    if dose > 500 or dose < 0.001:
+                        dosage_issues += 1
+                except ValueError:
+                    continue
+        if dosage_issues > 0:
+            findings.append(
+                Finding(
+                    id=_next_id("med"),
+                    category=self.category,
+                    module=self.name,
+                    severity="low",
+                    score=0.4,
+                    confidence=0.6,
+                    evidence=[f"{dosage_issues} medication entry/entries with unusual dosage values"],
+                    explanation=(
+                        "One or more medication entries contain unusually high or low dosage "
+                        "values that warrant verification against standard prescribing guidelines."
+                    ),
+                    fields={"unusual_dosage_count": dosage_issues},
+                )
+            )
+        return findings
+
+    @staticmethod
+    def _parse_date(date_str: str) -> datetime | None:
+        months = {
+            "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+            "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+        }
+        try:
+            parts = date_str.strip().split()
+            if len(parts) < 3:
+                return None
+            day = int(parts[0])
+            month_str = parts[1][:3].lower()
+            year = int(parts[2])
+            month = months.get(month_str)
+            if month is None:
+                return None
+            return datetime(year, month, day)
+        except (ValueError, IndexError):
+            return None
 
 
 class CertificateVerifier:
