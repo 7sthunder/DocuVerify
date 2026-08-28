@@ -16,8 +16,20 @@ def _label(score: float) -> str:
     return "anomaly"
 
 
+_SEVERITY_WEIGHT = {"low": 0.45, "medium": 0.7, "high": 1.0}
+_CATEGORY_CAP = {"low": 0.35, "medium": 0.6, "high": 1.0}
+
+
 def _severity_weight(f: Finding) -> float:
-    return {"low": 0.45, "medium": 0.7, "high": 1.0}[f.severity]
+    return _SEVERITY_WEIGHT[f.severity]
+
+
+def _top_severity(findings: list[Finding]) -> str:
+    if any(f.severity == "high" for f in findings):
+        return "high"
+    if any(f.severity == "medium" for f in findings):
+        return "medium"
+    return "low"
 
 
 def category_score(findings: list[Finding]) -> float:
@@ -25,7 +37,9 @@ def category_score(findings: list[Finding]) -> float:
         return 0.0
     top = max(_severity_weight(f) * f.score for f in findings)
     boost = 1 + 0.12 * (len(findings) - 1)
-    return min(1.0, top * boost)
+    # Cap each category by its strongest signal's severity tier so a pile of
+    # low/medium findings cannot inflate a category beyond its evidence ceiling.
+    return min(_CATEGORY_CAP[_top_severity(findings)], top * boost)
 
 
 def _bucket(f: Finding) -> str:
