@@ -19,6 +19,9 @@ def make_cert(
     regno="REG-2021-0487",
     issue_date="15 July 2025",
     producer="ABC University Document System v2.1",
+    creation=None,
+    mod=None,
+    cgpa_font=None,
 ):
     doc = pymupdf.open()
     page = doc.new_page(width=W, height=H)
@@ -52,7 +55,8 @@ def make_cert(
     )
 
     page.insert_textbox(pymupdf.Rect(90, 505, W - 90, 530), f"Program Duration:  {class_year}", fontname="Times-Roman", fontsize=12)
-    page.insert_textbox(pymupdf.Rect(90, 535, W - 90, 560), f"Final CGPA:  {cgpa}  (out of 10.00)", fontname="Times-Roman", fontsize=12)
+    cf = cgpa_font or ("Times-Roman", 12)
+    page.insert_textbox(pymupdf.Rect(90, 535, W - 90, 560), f"Final CGPA:  {cgpa}  (out of 10.00)", fontname=cf[0], fontsize=cf[1])
     page.insert_textbox(pymupdf.Rect(90, 565, W - 90, 590), f"Registration Number:  {regno}", fontname="Times-Roman", fontsize=12)
     page.insert_textbox(pymupdf.Rect(90, 595, W - 90, 620), f"Date of Issue:  {issue_date}", fontname="Times-Roman", fontsize=12)
 
@@ -63,15 +67,16 @@ def make_cert(
 
     page.insert_textbox(pymupdf.Rect(0, 775, W, 800), f"Certificate ID: {regno} | Verify at https://verify.abcuniv.edu.in", fontname="Helvetica", fontsize=9, align=1, color=(0.35, 0.35, 0.35))
 
-    doc.set_metadata(
-        {
-            "title": "Certificate of Completion",
-            "author": "ABC University of Technology",
-            "creator": producer,
-            "producer": producer,
-            "creationDate": pymupdf.get_pdf_now(),
-        }
-    )
+    meta = {
+        "title": "Certificate of Completion",
+        "author": "ABC University of Technology",
+        "creator": producer,
+        "producer": producer,
+        "creationDate": creation or pymupdf.get_pdf_now(),
+    }
+    if mod:
+        meta["modDate"] = mod
+    doc.set_metadata(meta)
     doc.save(str(path))
     doc.close()
     return path
