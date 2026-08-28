@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import type { Finding, JobStatus } from "./types";
-import { pageUrl, pollJob, uploadDocument } from "./api";
+import { pageUrl, pollJob, uploadCompare, uploadDocument } from "./api";
 import AssessmentCard from "./components/AssessmentCard";
 import PageViewer from "./components/PageViewer";
 import FindingList from "./components/FindingList";
@@ -15,15 +15,20 @@ export default function App() {
   const [job, setJob] = useState<JobStatus | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
+  const tplRef = useRef<HTMLInputElement>(null);
+  const [docFile, setDocFile] = useState<File | null>(null);
+  const [tplFile, setTplFile] = useState<File | null>(null);
 
-  const handleFile = async (file: File) => {
+  const run = async (doc: File, tpl: File | null) => {
     setError(null);
     setPhase("uploading");
-    setFilename(file.name);
+    setFilename(doc.name);
     setActiveId(null);
     try {
-      const { job_id } = await uploadDocument(file);
+      const { job_id } = tpl
+        ? await uploadCompare(doc, tpl)
+        : await uploadDocument(doc);
       setJobId(job_id);
       setPhase("processing");
       const done = await pollJob(job_id, (j) => {
@@ -52,6 +57,16 @@ export default function App() {
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  const reset = () => {
+    setDocFile(null);
+    setTplFile(null);
+    setJob(null);
+    setJobId(null);
+    setActiveId(null);
+    setError(null);
+    setPhase("idle");
+  };
+
   const report = job?.report;
 
   return (
@@ -74,28 +89,63 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 py-6">
         {phase === "idle" && (
-          <div className="bg-white rounded-lg shadow p-10 text-center">
+          <div className="bg-white rounded-lg shadow p-10 max-w-xl mx-auto text-center">
             <h2 className="text-lg font-semibold text-slate-800 mb-1">Verify a document</h2>
             <p className="text-sm text-slate-500 mb-6">
               Upload a PDF, JPG or PNG. DocuVerify extracts text, layout, typography, visual and metadata signals and
               produces an explainable forensic assessment with highlighted suspicious regions.
             </p>
-            <button
-              onClick={() => inputRef.current?.click()}
-              className="px-6 py-3 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-700"
-            >
-              Choose document
-            </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-              }}
-            />
+            <div className="space-y-3 text-left">
+              <div className="border rounded-lg p-4">
+                <label className="text-sm font-medium text-slate-700">Document to verify *</label>
+                <button
+                  onClick={() => docRef.current?.click()}
+                  className="mt-2 w-full px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-700"
+                >
+                  {docFile ? `✓ ${docFile.name}` : "Choose document"}
+                </button>
+                <input
+                  ref={docRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              <div className="border rounded-lg p-4">
+                <label className="text-sm font-medium text-slate-700">
+                  Official template <span className="text-slate-400">(optional — enables reference comparison)</span>
+                </label>
+                <button
+                  onClick={() => tplRef.current?.click()}
+                  className="mt-2 w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
+                >
+                  {tplFile ? `✓ ${tplFile.name}` : "Choose template"}
+                </button>
+                {tplFile && (
+                  <button
+                    onClick={() => setTplFile(null)}
+                    className="mt-1 text-xs text-red-500 hover:underline"
+                  >
+                    Remove template
+                  </button>
+                )}
+                <input
+                  ref={tplRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  className="hidden"
+                  onChange={(e) => setTplFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+              <button
+                disabled={!docFile}
+                onClick={() => docFile && run(docFile, tplFile)}
+                className="w-full px-6 py-3 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {tplFile ? "Analyze against template" : "Analyze document"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -138,14 +188,41 @@ export default function App() {
                 </label>
               </div>
               <button
-                onClick={() => setPhase("idle")}
+                onClick={reset}
                 className="px-4 py-2 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
               >
                 New document
               </button>
             </div>
 
+            {report.reference?.enabled && (
+              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-sm text-indigo-800">
+                <b>Reference comparison:</b> document checked against official template{" "}
+                <span className="font-mono">{report.reference.template}</span> —{" "}
+                {report.reference.finding_count} template-difference finding(s).
+              </div>
+            )}
+
             <AssessmentCard assessment={report.assessment} />
+
+            {report.llm?.summary && (
+              <div className="bg-white rounded-lg shadow p-5 border-l-4 border-indigo-400">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
+                    AI semantic assessment
+                  </h3>
+                  <span className="text-[10px] text-slate-400">
+                    {report.llm.finding_count} LLM findings
+                  </span>
+                </div>
+                <p className="mt-2 text-sm text-slate-700 leading-relaxed">{report.llm.summary}</p>
+              </div>
+            )}
+            {report.llm?.error && report.llm.enabled && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-xs text-amber-700">
+                LLM layer note: {report.llm.error}. Deterministic analyzers still produced the full report.
+              </div>
+            )}
 
             <div className="grid lg:grid-cols-5 gap-6">
               <div className="lg:col-span-3 space-y-6">

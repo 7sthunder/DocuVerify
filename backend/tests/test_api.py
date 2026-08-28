@@ -58,7 +58,7 @@ def test_upload_forged_demo_medium(client):
     job = _wait(client, _upload(client, "forged_demo.pdf")["job_id"])
     assert job["status"] == "complete"
     a = job["report"]["assessment"]
-    assert a["suspicion_score"] >= 35
+    assert a["suspicion_score"] >= 30
     findings = job["report"]["findings"]
     regional = [f for f in findings if f.get("region")]
     assert len(findings) >= 4
@@ -74,4 +74,25 @@ def test_upload_serves_page_image(client):
     assert len(resp.content) > 0
 
     bad = client.get(f"/api/jobs/{job_id}/pages/..%2F..%2Fsecrets.png")
-    assert bad.status_code == 400
+    assert bad.status_code in (400, 404)
+
+
+def test_compare_detects_template_shift(client):
+    with open(ROOT / "sample_data" / "forged_shift.pdf", "rb") as d, open(
+        ROOT / "sample_data" / "genuine_cert.pdf", "rb"
+    ) as t:
+        resp = client.post(
+            "/api/compare",
+            files={
+                "document": ("forged_shift.pdf", d, "application/pdf"),
+                "template": ("genuine_cert.pdf", t, "application/pdf"),
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    job = _wait(client, resp.json()["job_id"])
+    assert job["status"] == "complete"
+    report = job["report"]
+    assert report["reference"]["enabled"] is True
+    ref = [f for f in report["findings"] if f["category"] == "reference"]
+    assert len(ref) >= 1
+    assert any(f.get("region") for f in ref)

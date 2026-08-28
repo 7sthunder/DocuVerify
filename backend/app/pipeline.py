@@ -8,21 +8,10 @@ from .ingestion import ingest
 from .llm import llm_analyze
 
 
-def analyze_file(path: Path, job_dir: Path, run_ocr: bool = True) -> dict:
-    data = path.read_bytes()
-    doc = ingest(data, path.name, job_dir)
-    doc = extract(doc, run_ocr=run_ocr)
-    findings = run_analyzers(doc)
-    assessment = aggregate(doc, findings)
-
-    llm_findings, llm_summary, llm_error = llm_analyze(doc, findings)
-    all_findings = findings + llm_findings
-    if llm_findings:
-        assessment = aggregate(doc, all_findings)
-
-    return {
+def _to_report(doc, findings, assessment, llm_findings, llm_summary, llm_error, extra=None):
+    data = {
         "assessment": assessment.model_dump(),
-        "findings": [f.model_dump() for f in all_findings],
+        "findings": [f.model_dump() for f in findings],
         "pages": [
             {
                 "index": p.index,
@@ -44,3 +33,28 @@ def analyze_file(path: Path, job_dir: Path, run_ocr: bool = True) -> dict:
             "finding_count": len(llm_findings),
         },
     }
+    if extra:
+        data.update(extra)
+    return data
+
+
+def analyze_document(doc, weights=None):
+    findings = run_analyzers(doc)
+    assessment = aggregate(doc, findings, weights=weights)
+    llm_findings, llm_summary, llm_error = llm_analyze(doc, findings)
+    if llm_findings:
+        findings = findings + llm_findings
+        assessment = aggregate(doc, findings, weights=weights)
+    return doc, findings, assessment, llm_findings, llm_summary, llm_error
+
+
+def build_report(doc, extra=None):
+    _, findings, assessment, lf, ls, le = analyze_document(doc)
+    return _to_report(doc, findings, assessment, lf, ls, le, extra)
+
+
+def analyze_file(path: Path, job_dir: Path, run_ocr: bool = True) -> dict:
+    data = path.read_bytes()
+    doc = ingest(data, path.name, job_dir)
+    doc = extract(doc, run_ocr=run_ocr)
+    return build_report(doc)

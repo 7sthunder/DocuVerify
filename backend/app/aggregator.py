@@ -27,9 +27,10 @@ def category_score(findings: list[Finding]) -> float:
     return min(1.0, top * boost)
 
 
-def aggregate(doc, findings: list[Finding]) -> Assessment:
+def aggregate(doc, findings: list[Finding], weights: dict | None = None) -> Assessment:
     from .llm import is_enabled
 
+    WEIGHTS_ACTIVE = weights or WEIGHTS
     by_cat: dict[str, list[Finding]] = {}
     for f in findings:
         by_cat.setdefault(f.category, []).append(f)
@@ -44,7 +45,7 @@ def aggregate(doc, findings: list[Finding]) -> Assessment:
 
     statuses: list[CategoryStatus] = []
     active: list[str] = []
-    for cat in WEIGHTS:
+    for cat in WEIGHTS_ACTIVE:
         fs = by_cat.get(cat, [])
         if cat in unavailable or (cat == "metadata" and not fs):
             statuses.append(
@@ -71,11 +72,11 @@ def aggregate(doc, findings: list[Finding]) -> Assessment:
             )
         )
 
-    total_w = sum(WEIGHTS[c] for c in active)
+    total_w = sum(WEIGHTS_ACTIVE[c] for c in active)
     suspicion = 0.0
     for s in statuses:
         if s.available:
-            suspicion += (WEIGHTS[s.category] / total_w) * s.score
+            suspicion += (WEIGHTS_ACTIVE[s.category] / total_w) * s.score
 
     risk = "LOW" if suspicion < LOW_THRESHOLD else ("HIGH" if suspicion >= HIGH_THRESHOLD else "MEDIUM")
     return Assessment(suspicion_score=round(suspicion * 100, 1), risk_level=risk, categories=statuses)

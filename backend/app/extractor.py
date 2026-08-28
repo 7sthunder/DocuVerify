@@ -8,7 +8,7 @@ from .document import Document, PageContext
 from .schemas import TextBox
 
 _ENGINE = None
-_ENGINE_LOCK = threading.Lock()
+_ENGINE_LOCK = threading.RLock()
 
 
 def _engine():

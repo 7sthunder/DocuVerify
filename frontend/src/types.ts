@@ -48,11 +48,26 @@ export interface Reliability {
   ocr_computed: boolean;
 }
 
+export interface LlmInfo {
+  enabled: boolean;
+  summary: string | null;
+  error: string | null;
+  finding_count: number;
+}
+
+export interface ReferenceInfo {
+  enabled: boolean;
+  template: string | null;
+  finding_count: number;
+}
+
 export interface Report {
   assessment: Assessment;
   findings: Finding[];
   pages: PageInfo[];
   reliability: Reliability;
+  llm: LlmInfo;
+  reference?: ReferenceInfo;
 }
 
 export interface JobStatus {

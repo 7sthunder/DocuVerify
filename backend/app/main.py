@@ -12,8 +12,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .ingestion import ValidationError, validate_bytes
-from .pipeline import analyze_file
+from .extractor import extract
+from .ingestion import ValidationError, ingest, validate_bytes
+from .pipeline import analyze_file, build_report
+from .reference import compare_docs, compare_weights
 
 ROOT = Path(__file__).resolve().parent
 JOBS_DIR = ROOT / "jobs"
@@ -37,9 +39,12 @@ async def _run_job(job_id: str, job: dict):
     job_dir = Path(job["job_dir"])
     job["status"] = "processing"
     try:
-        report = await asyncio.to_thread(
-            analyze_file, job_dir / job["original_name"], job_dir, True
-        )
+        if job["mode"] != "compare":
+            report = await asyncio.to_thread(
+                analyze_file, job_dir / job["original_name"], job_dir, True
+            )
+        else:
+            report = await asyncio.to_thread(_run_compare, job_dir, job)
         (job_dir / "report.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -53,6 +58,37 @@ async def _run_job(job_id: str, job: dict):
         job["status"] = "failed"
         job["error"] = f"Analysis failed: {exc}"
         job["finished"] = time.time()
+
+
+def _run_compare(job_dir: Path, job: dict) -> dict:
+    import shutil
+
+    from .aggregator import aggregate
+    from .config import WEIGHTS
+    from .pipeline import _to_report, analyze_document
+    from .reference import compare_docs, compare_weights
+
+    doc = extract(ingest((job_dir / job["original_name"]).read_bytes(), "document.pdf", job_dir / "_d"), run_ocr=True)
+    tpl = extract(ingest((job_dir / "template.pdf").read_bytes(), "template.pdf", job_dir / "_t"), run_ocr=True)
+    refs = compare_docs(tpl, doc)
+
+    _, findings, _assessment, lf, ls, le = analyze_document(doc)
+    combined = findings + refs
+    assessment = aggregate(doc, combined, weights=compare_weights(dict(WEIGHTS)))
+
+    src = job_dir / "_d" / "pages"
+    if src.exists():
+        shutil.copytree(src, job_dir / "pages", dirs_exist_ok=True)
+
+    return _to_report(
+        doc,
+        combined,
+        assessment,
+        lf,
+        ls,
+        le,
+        {"reference": {"enabled": True, "template": job.get("template_name"), "finding_count": len(refs)}},
+    )
 
 
 async def _cleanup_loop():
@@ -102,7 +138,42 @@ async def upload_document(file: UploadFile = File(...)):
     job = {
         "id": job_id,
         "status": "queued",
+        "mode": "single",
         "filename": file.filename,
+        "original_name": original_name,
+        "job_dir": str(job_dir),
+        "created": time.time(),
+        "finished": None,
+        "error": None,
+        "report": None,
+    }
+    _jobs[job_id] = job
+    asyncio.create_task(_run_job(job_id, job))
+    return {"job_id": job_id}
+
+
+@app.post("/api/compare")
+async def upload_compare(document: UploadFile = File(...), template: UploadFile = File(...)):
+    d_data = await document.read()
+    t_data = await template.read()
+    try:
+        d_ext = validate_bytes(d_data, document.filename or "upload.pdf")
+        t_ext = validate_bytes(t_data, template.filename or "template.pdf")
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    job_id, job_dir = _new_job_dir()
+    original_name = f"original{d_ext}"
+    (job_dir / original_name).write_bytes(d_data)
+    (job_dir / "template.pdf").write_bytes(t_data)
+    (job_dir / "pages").mkdir(exist_ok=True)
+
+    job = {
+        "id": job_id,
+        "status": "queued",
+        "mode": "compare",
+        "filename": document.filename,
+        "template_name": template.filename,
         "original_name": original_name,
         "job_dir": str(job_dir),
         "created": time.time(),
