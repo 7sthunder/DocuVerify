@@ -68,8 +68,8 @@ def _run_compare(job_dir: Path, job: dict) -> dict:
     from .pipeline import _to_report, analyze_document
     from .reference import compare_docs, compare_weights
 
-    doc = extract(ingest((job_dir / job["original_name"]).read_bytes(), "document.pdf", job_dir / "_d"), run_ocr=True)
-    tpl = extract(ingest((job_dir / "template.pdf").read_bytes(), "template.pdf", job_dir / "_t"), run_ocr=True)
+    doc = extract(ingest((job_dir / job["original_name"]).read_bytes(), job["original_name"], job_dir / "_d"), run_ocr=True)
+    tpl = extract(ingest((job_dir / job["template_file"]).read_bytes(), job["template_file"], job_dir / "_t"), run_ocr=True)
     refs = compare_docs(tpl, doc)
 
     _, findings, _assessment, lf, ls, le = analyze_document(doc)
@@ -164,8 +164,9 @@ async def upload_compare(document: UploadFile = File(...), template: UploadFile 
 
     job_id, job_dir = _new_job_dir()
     original_name = f"original{d_ext}"
+    template_name = f"template{t_ext}"
     (job_dir / original_name).write_bytes(d_data)
-    (job_dir / "template.pdf").write_bytes(t_data)
+    (job_dir / template_name).write_bytes(t_data)
     (job_dir / "pages").mkdir(exist_ok=True)
 
     job = {
@@ -174,6 +175,7 @@ async def upload_compare(document: UploadFile = File(...), template: UploadFile 
         "mode": "compare",
         "filename": document.filename,
         "template_name": template.filename,
+        "template_file": template_name,
         "original_name": original_name,
         "job_dir": str(job_dir),
         "created": time.time(),

@@ -4,7 +4,7 @@ from pathlib import Path
 import pymupdf
 from PIL import Image
 
-from .config import CANVAS_W, MAX_PAGES, MAX_UPLOAD_BYTES
+from .config import CANVAS_W, MAX_IMAGE_PIXELS, MAX_PAGES, MAX_UPLOAD_BYTES
 from .document import Document, PageContext
 
 ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png"}
@@ -49,6 +49,10 @@ def _resize_to_canvas(img: Image.Image, canvas_w: int = CANVAS_W) -> Image.Image
 
 def _render_pdf_page(page: pymupdf.Page, save_to: Path, canvas_w: int = CANVAS_W) -> tuple[int, int]:
     k = canvas_w / page.rect.width
+    w = int(page.rect.width * k)
+    h = int(page.rect.height * k)
+    if w * h > MAX_IMAGE_PIXELS:
+        raise ValidationError("Page renders to too large an image to process safely")
     pix = page.get_pixmap(matrix=pymupdf.Matrix(k, k), colorspace=pymupdf.csRGB, alpha=False)
     pix.save(str(save_to))
     return pix.width, pix.height
@@ -116,6 +120,9 @@ def _ingest_image(data: bytes, ext: str, job_dir: Path) -> Document:
     img = Image.open(io.BytesIO(data))
     img.verify()
     img = Image.open(io.BytesIO(data))
+
+    if img.width * img.height > MAX_IMAGE_PIXELS:
+        raise ValidationError("Image dimensions are too large to process safely")
 
     pages_dir = job_dir / "pages"
     pages_dir.mkdir(exist_ok=True)

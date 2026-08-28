@@ -96,3 +96,27 @@ def test_compare_detects_template_shift(client):
     ref = [f for f in report["findings"] if f["category"] == "reference"]
     assert len(ref) >= 1
     assert any(f.get("region") for f in ref)
+
+
+def test_compare_accepts_image_template(client):
+    import io
+
+    import pymupdf
+    from PIL import Image
+
+    pdf = pymupdf.open(ROOT / "sample_data" / "genuine_cert.pdf")
+    pix = pdf[0].get_pixmap(matrix=pymupdf.Matrix(0.5, 0.5), colorspace=pymupdf.csRGB, alpha=False)
+    buf = io.BytesIO(pix.tobytes("png"))
+
+    with open(ROOT / "sample_data" / "forged_shift.pdf", "rb") as d:
+        resp = client.post(
+            "/api/compare",
+            files={
+                "document": ("forged_shift.pdf", d, "application/pdf"),
+                "template": ("template.png", buf.getvalue(), "image/png"),
+            },
+        )
+    assert resp.status_code == 200, resp.text
+    job = _wait(client, resp.json()["job_id"])
+    assert job["status"] == "complete", job.get("error")
+    assert job["report"]["reference"]["enabled"] is True
