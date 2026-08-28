@@ -118,6 +118,6 @@ When `backend/.env` has `LLM_ENABLED=true` + a valid key, the pipeline adds a se
 
 Free OpenRouter model currently in use: `minimax/minimax-m3:free` (swap `LLM_MODEL` is one line). If a free model is rate-limited, the pipeline falls back gracefully — the deterministic analyzers always deliver the full report.
 
-## Roadmap (Phase 5, remaining)
+## Roadmap
 
-- Reference Template Mode — compare an uploaded doc against an official template
+- Reference Template Mode — compare an uploaded doc against an official template. Shipped: `/api/compare` (backend) + the **Templates** page (frontend) with a difference report (position shifts, font differences, missing/extra blocks) and overlay highlights.
