@@ -169,3 +169,121 @@ def test_classification_of_generated_invoice_is_deterministic_invoice():
         with tempfile_dir() as jd:
             doc = extract(ingest(inv.read_bytes(), inv.name, jd), run_ocr=False)
     assert classify_deterministic(doc).type_id == "invoice"
+
+
+# ---- Regression tests for tricky-legit layouts that must NOT flag ----
+
+def _ingest_pdf(content: str) -> Path:
+    """Create a PDF from raw pymupdf insert_text calls."""
+    d = pymupdf.open()
+    page = d.new_page(width=PW, height=PH)
+    for line in content.strip().split("\n"):
+        x, y, text = line.split("|", 2)
+        page.insert_text((float(x), float(y)), text.strip(), fontname="helv", fontsize=10)
+    out = ROOT / "sample_data" / f"_verifier_regr_{abs(hash(content))}.pdf"
+    out.write_bytes(d.tobytes())
+    d.close()
+    return out
+
+
+def test_invoice_verifier_quiet_on_discounted_invoice():
+    """Legit invoice with a discount row between subtotal and tax."""
+    doc = _ingested(_ingest_pdf("""
+        60|200|TAX INVOICE
+        200|230|Subtotal          Rs 1,000.00
+        200|250|Discount (5%)     Rs 50.00
+        200|270|CGST 9%           Rs 85.50
+        200|290|SGST 9%           Rs 85.50
+        200|320|TOTAL             Rs 1,121.00
+    """))
+    assert InvoiceVerifier().analyze(doc) == []
+
+
+def test_invoice_verifier_quiet_on_total_tax_and_qty_rows():
+    """Legit invoice with 'Total Qty' and 'Total Tax Amount' rows that
+    must not be confused with the invoice total."""
+    doc = _ingested(_ingest_pdf("""
+        60|200|TAX INVOICE
+        200|230|Subtotal              Rs 1,000.00
+        200|250|Total Qty             3
+        200|270|Total Tax Amount      Rs 180.00
+        200|300|TOTAL                 Rs 1,180.00
+    """))
+    assert InvoiceVerifier().analyze(doc) == []
+
+
+def test_invoice_verifier_quiet_on_partial_payment():
+    """Legit invoice with advance payment and balance due below total."""
+    doc = _ingested(_ingest_pdf("""
+        60|200|TAX INVOICE
+        200|230|Subtotal          Rs 1,000.00
+        200|250|CGST 9% + SGST 9% Rs 180.00
+        200|280|TOTAL             Rs 1,180.00
+        200|300|Advance Paid      Rs 500.00
+        200|320|Balance Due       Rs 680.00
+    """))
+    assert InvoiceVerifier().analyze(doc) == []
+
+
+def test_invoice_verifier_quiet_on_combined_tax_row():
+    """Single-box combined CGST+SGST row (common in e-invoices)."""
+    doc = _ingested(_ingest_pdf("""
+        60|200|TAX INVOICE
+        200|230|Subtotal          Rs 1,000.00
+        200|250|CGST 9%: 90.00 SGST 9%: 90.00
+        200|280|TOTAL             Rs 1,180.00
+    """))
+    assert InvoiceVerifier().analyze(doc) == []
+
+
+def test_invoice_verifier_flags_tampered_balance_due():
+    """Balance due inconsistent with total minus payments = tampering signal."""
+    doc = _ingested(_ingest_pdf("""
+        60|200|TAX INVOICE
+        200|230|Subtotal          Rs 1,000.00
+        200|250|CGST 9% + SGST 9% Rs 180.00
+        200|280|TOTAL             Rs 1,180.00
+        200|300|Advance Paid      Rs 200.00
+        200|320|Balance Due       Rs 380.00
+    """))
+    findings = InvoiceVerifier().analyze(doc)
+    assert any(f.id == "inv-003" for f in findings)
+
+
+def test_universal_verifier_quiet_on_multi_gstin():
+    """Multi-GSTIN header line (supplier + recipient) dash-joined."""
+    doc = _ingested(_ingest_pdf("""
+        60|140|GSTIN: 36AABCR3217K1ZB-07AABCU9603R1ZM
+        200|230|Subtotal          Rs 1,000.00
+        200|250|CGST 9% + SGST 9% Rs 180.00
+        200|280|TOTAL             Rs 1,180.00
+    """))
+    findings = UniversalVerifier().analyze(doc)
+    assert not [f for f in findings if f.id == "unv-002"]
+
+
+def test_universal_verifier_quiet_on_future_event_date():
+    """Generic 'Date:' on a ticket/booking is an event date, not an issue date."""
+    doc = _ingested(_ingest_pdf("""
+        60|100|EVENT TICKET
+        60|140|Date: 15 March 2027
+        60|160|Seat: A14 | Gate 3
+    """))
+    findings = UniversalVerifier().analyze(doc)
+    assert not [f for f in findings if f.id == "unv-001"]
+
+
+def test_forged_total_reported_medium_or_higher():
+    """A blatant arithmetic contradiction must push the global score to
+    at least MEDIUM via the decisive-evidence floor."""
+    with tempfile.TemporaryDirectory(prefix="dv_floor_", dir=ROOT) as jd:
+        pdf_path = _ingest_pdf("""
+            60|200|TAX INVOICE
+            200|230|Subtotal          Rs 1,000.00
+            200|250|CGST 9% + SGST 9% Rs 180.00
+            200|280|TOTAL             Rs 2,980.00
+        """)
+        report = analyze_file(pdf_path, Path(jd), run_ocr=False)
+    a = report["assessment"]
+    assert a["risk_level"] in ("MEDIUM", "HIGH"), f"scored {a['suspicion_score']} ({a['risk_level']})"
+    assert a["suspicion_score"] >= 40.0, f"floor failed: {a['suspicion_score']}"

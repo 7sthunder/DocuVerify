@@ -17,7 +17,8 @@ _DATE_TEXT_RE = re.compile(
 )
 _DATE_NUMERIC_RE = re.compile(r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})")
 _LABELED_DATE_RE = re.compile(
-    r"^\s*(date|dated|issue date|date of issue|issued|invoice date|order date)\s*[:\-]", re.I
+    r"^\s*(date|dated|issue date|date of issue|date of issuance|issued|issued on|invoice date|order date)\s*[:\-]",
+    re.I,
 )
 _MONEY_RE = re.compile(
     r"(?:rs\.?|inr|usd|eur|gbp|\u20B9|\$|\u20AC|\u00A3)?\s*((?:\d{1,3}(?:,\d{2,3})*|\d+)(?:\.\d{1,2})?)",
@@ -30,7 +31,9 @@ _ID_LABEL_RE = re.compile(
     r"^\s*([A-Za-z][A-Za-z .]{0,24}(?:no|number|id)\.?|gstin|pan|ref|reference|reg no|reg\. no)\s*[:\-]\s*(.+)$",
     re.I,
 )
-_GSTIN_LABELED_RE = re.compile(r"\b(?:gstin|gst)\b\s*[:\-]?\s*([A-Z0-9\-]{6,18})", re.I)
+_GSTIN_LABELED_RE = re.compile(
+    r"\b(?:gstin|gst)\b\s*[:\-]?\s*([0-9A-Z][0-9A-Z/,;.\-]{5,38})", re.I
+)
 GSTIN_FORMAT_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
 
 
@@ -105,7 +108,9 @@ def extract_entities(doc: Document) -> Entities:
             if idm:
                 ents.identifiers[idm.group(1).strip().rstrip(":").lower()] = idm.group(2).strip()
             gst_m = _GSTIN_LABELED_RE.search(t)
-            if gst_m:
+            # Tax identifiers always contain digits; captures like "INVOICE"
+            # (from "GST Invoice Number:") are title words, not identifiers.
+            if gst_m and re.search(r"\d", gst_m.group(1)):
                 ents.gstins.append(gst_m.group(1).upper())
     ents.dates.extend(d for _, d in ents.labeled_dates)
     return ents

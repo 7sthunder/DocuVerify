@@ -115,7 +115,7 @@ class Registry:
                     error=error,
                 )
             )
-        return findings, runs
+        return _dedupe(findings), runs
 
 
 def _analyzer_adapter(analyzer: Analyzer):
@@ -129,19 +129,28 @@ def _analyzer_adapter(analyzer: Analyzer):
     return _Adapter()
 
 
-def default_registry() -> Registry:
-    reg = Registry()
-    from .verifiers import CertificateVerifier, InvoiceVerifier, UniversalVerifier
-
-    for analyzer in ANALYZERS:
-        cost = "expensive" if analyzer.category == "visual" else ("moderate" if analyzer.category == "layout" else "cheap")
-        reg.register(
-            name=analyzer.category,
-            label=analyzer.name,
-            runner=_analyzer_adapter(analyzer),
-            scope="universal",
-            cost=cost,
-        )
+def _dedupe(findings: list[Finding]) -> list[Finding]:
+    """Collapse findings reported identically by more than one capability
+    (e.g. the semantic analyzer running both universally and as a domain
+    verifier) so duplicate signals cannot double-count in the aggregator."""
+    seen: set[tuple] = set()
+    out: list[Finding] = []
+    for f in findings:
+        rk = None
+        if f.region is not None:
+            rk = (
+                f.region.page,
+                round(f.region.x, 1),
+                round(f.region.y, 1),
+                round(f.region.w, 1),
+                round(f.region.h, 1),
+            )
+        key = (f.module, f.category, f.severity, f.score, tuple(f.evidence), rk)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(f)
+    return out
 
 
 class _EmbeddedImagesAdapter:
@@ -180,7 +189,7 @@ def default_registry() -> Registry:
         runner=CertificateVerifier(),
         scope="domain",
         cost="cheap",
-        domain_types={"certificate", "transcript", "tax_document"},
+        domain_types={"certificate", "transcript"},
     )
     reg.register(
         name="invoice_verifier",

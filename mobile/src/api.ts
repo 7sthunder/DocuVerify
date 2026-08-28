@@ -72,15 +72,16 @@ export async function probeServer(base: string): Promise<boolean> {
 /**
  * Probes the plausible DocuVerify backends in order and returns the first one
  * that actually answers /api/health from this phone:
- *   1. the Windows hotspot host (192.168.137.1 — laptop sharing its internet)
+ *   1. localhost — hits the laptop over the USB adb-reverse bridge when
+ *      connected (stablest link; harmless fast-fail when absent)
  *   2. the machine serving the Expo bundle (auto-detected hostUri)
- *   3. localhost (Android emulator / web)
+ *   3. the Windows hotspot host (192.168.137.1 — laptop sharing its internet)
  */
 export async function autoFindServer(): Promise<string | null> {
   const candidates = [
-    "http://192.168.137.1:8000",
-    detectDefaultServer(),
     "http://localhost:8000",
+    detectDefaultServer(),
+    "http://192.168.137.1:8000",
   ];
   const seen = new Set<string>();
   for (const cand of candidates) {

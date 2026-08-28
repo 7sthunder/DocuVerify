@@ -28,7 +28,7 @@ CERT_HINTS = (
 _YEAR_RANGE_RE = re.compile(r"(\d{4})\s*[-–]\s*(\d{4})")
 _DATE_TEXT_RE = re.compile(r"(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{4})", re.I)
 _CGPA_RE = re.compile(r"cgpa\s*[:.\-]?\s*([\d.,]+)\s*\(?\s*(?:out\s*of|of|/)\s*([\d.,]+)", re.I)
-_REG_RE = re.compile(r"(?:reg|reg\.? no|registration)\s*[:\-]?\s*([A-Z0-9\-]{5,20})", re.I)
+_REG_RE = re.compile(r"\b(?:reg(?:\.?\s*no|istration(?:\s*no)?)?)\s*[:\-]\s*([A-Z0-9\-]{5,20})", re.I)
 
 
 def _document_text(doc: Document) -> str:

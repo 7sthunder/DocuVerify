@@ -75,19 +75,65 @@ export function VerifyScreen({ active, onOpenSettings }: { active: boolean; onOp
       }
       if (token !== runToken.current) return;
 
-      const { job_id } = tplFile
-        ? await uploadCompare(docFile, tplFile, base)
-        : await uploadDocument(docFile, base);
+      let jobIdResolved: string;
+      try {
+        const r = tplFile
+          ? await uploadCompare(docFile, tplFile, base)
+          : await uploadDocument(docFile, base);
+        jobIdResolved = r.job_id;
+      } catch (uploadError) {
+        // Transport-level failure on the pinned server: try to find another
+        // reachable backend (e.g. the USB localhost bridge) and retry once.
+        if (cancelledRef.current || runToken.current !== token) return;
+        const msg = uploadError instanceof Error ? uploadError.message : "";
+        if (!/Cannot reach the server|took too long/i.test(msg)) throw uploadError;
+        const alt = await autoFindServer();
+        if (!alt || cancelledRef.current || runToken.current !== token) throw uploadError;
+        if (alt !== base) await setServerUrl(alt, { pin: true });
+        const r = tplFile
+          ? await uploadCompare(docFile, tplFile, alt)
+          : await uploadDocument(docFile, alt);
+        jobIdResolved = r.job_id;
+      }
+      let job_id = jobIdResolved;
       if (token !== runToken.current) return;
       setJobId(job_id);
       setPhase("processing");
-      const done = await pollJob(
-        job_id,
-        (j) => {
-          if (token === runToken.current) setJob(j);
-        },
-        () => cancelledRef.current
-      );
+      let done: JobStatus;
+      try {
+        done = await pollJob(
+          job_id,
+          (j) => {
+            if (token === runToken.current) setJob(j);
+          },
+          () => cancelledRef.current
+        );
+      } catch (pollError) {
+        const pollMsg = pollError instanceof Error ? pollError.message : "";
+        if (
+          cancelledRef.current ||
+          runToken.current !== token ||
+          !/restarted|not found/i.test(pollMsg)
+        ) {
+          throw pollError;
+        }
+        // Backend restarted mid-analysis (its in-memory job store is gone):
+        // re-upload the same document once instead of dead-ending in an
+        // error card.
+        const retry = tplFile
+          ? await uploadCompare(docFile, tplFile, getServerUrlSync())
+          : await uploadDocument(docFile, getServerUrlSync());
+        if (token !== runToken.current) return;
+        job_id = retry.job_id;
+        setJobId(job_id);
+        done = await pollJob(
+          job_id,
+          (j) => {
+            if (token === runToken.current) setJob(j);
+          },
+          () => cancelledRef.current
+        );
+      }
       if (token !== runToken.current) return;
 
       runningRef.current = false;

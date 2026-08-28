@@ -18,6 +18,14 @@ def _label(score: float) -> str:
 
 _SEVERITY_WEIGHT = {"low": 0.45, "medium": 0.7, "high": 1.0}
 _CATEGORY_CAP = {"low": 0.35, "medium": 0.6, "high": 1.0}
+# A finding must carry at least this much weight (severity x score) before it
+# counts as an independent stacking signal; weak heuristic hits on legitimate
+# documents must not inflate a category among themselves.
+_STRONG_SIGNAL = 0.30
+# Deterministic, high-confidence contradictions (printed arithmetic that
+# cannot reconcile) may not be diluted below a defensible floor.
+_DECISIVE_MIN_CONF = 0.75
+_DECISIVE_EXCLUDED = {"semantic_llm", "text_layer"}
 
 
 def _severity_weight(f: Finding) -> float:
@@ -36,10 +44,45 @@ def category_score(findings: list[Finding]) -> float:
     if not findings:
         return 0.0
     top = max(_severity_weight(f) * f.score for f in findings)
-    boost = 1 + 0.12 * (len(findings) - 1)
+    strong = [f for f in findings if _severity_weight(f) * f.score >= _STRONG_SIGNAL]
+    boost = 1 + 0.12 * (len(strong) - 1)
     # Cap each category by its strongest signal's severity tier so a pile of
     # low/medium findings cannot inflate a category beyond its evidence ceiling.
     return min(_CATEGORY_CAP[_top_severity(findings)], top * boost)
+
+
+def _decisive_floor(findings: list[Finding]) -> float:
+    """Score floor for decisive, deterministic evidence.
+
+    Only findings that are (a) high severity, (b) high confidence and (c) not
+    LLM-produced qualify. A single hard contradiction (e.g. subtotal + tax
+    != printed total) justifies at least a medium-risk review; several
+    independent hard contradictions escalate toward high risk. Medium
+    contradictions (tax-rate vs tax-amount, balance-due vs payments) only
+    floor the score when two or more of them agree — one alone stays visible
+    as a finding without moving the risk band.
+    """
+    hard = [
+        f
+        for f in findings
+        if f.severity == "high"
+        and f.confidence >= _DECISIVE_MIN_CONF
+        and _bucket(f) not in _DECISIVE_EXCLUDED
+    ]
+    floor = 0.0
+    if hard:
+        multiplier = min(0.9, 0.60 + 0.15 * (len(hard) - 1))
+        floor = max(f.score for f in hard) * multiplier
+    meds = [
+        f
+        for f in findings
+        if f.severity == "medium"
+        and f.confidence >= 0.7
+        and _bucket(f) not in _DECISIVE_EXCLUDED
+    ]
+    if len(meds) >= 2:
+        floor = max(floor, max(f.score for f in meds) * 0.55)
+    return floor
 
 
 def _bucket(f: Finding) -> str:
@@ -99,6 +142,7 @@ def aggregate(doc, findings: list[Finding], weights: dict | None = None) -> Asse
     for s in statuses:
         if s.available:
             suspicion += (WEIGHTS_ACTIVE[s.category] / total_w) * s.score
+    suspicion = max(suspicion, _decisive_floor(findings))
 
     risk = "LOW" if suspicion < LOW_THRESHOLD else ("HIGH" if suspicion >= HIGH_THRESHOLD else "MEDIUM")
     return Assessment(suspicion_score=round(suspicion * 100, 1), risk_level=risk, categories=statuses)

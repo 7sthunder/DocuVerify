@@ -46,6 +46,10 @@ class LayoutAnalyzer(Analyzer):
             # Boxes are considered "column-anchored" when at least 2 other blocks
             # share the same x position anywhere on the page (a repeated column).
             near_floor = 2
+            # Field-value columns on the right half of the page (totals, dates,
+            # customer fields) are naturally ragged: when several blocks live in
+            # that zone it is a column, not an isolated shift.
+            right_zone = [o for o in body if o.x > pw * 0.6]
             findings_for_page: list[Finding] = []
             for b in body:
                 if b.y < ph * 0.10:
@@ -53,6 +57,8 @@ class LayoutAnalyzer(Analyzer):
                 dev = b.x - dom_l
                 adev = abs(dev)
                 if adev < 115:
+                    continue
+                if b.x > pw * 0.6 and len(right_zone) >= 4:
                     continue
                 near = sum(
                     1
@@ -65,6 +71,20 @@ class LayoutAnalyzer(Analyzer):
                     if abs((o.x + o.w) - (b.x + b.w)) < 16 and abs(o.y - b.y) >= 30
                 )
                 if near >= near_floor or near_right >= near_floor:
+                    continue
+                # A value box printed immediately after its label on the same
+                # row ("Invoice Number: TBC0626...") is natural label:value
+                # layout, not an independently shifted block.
+                bcy = b.y + b.h / 2
+                row_gap = max(18.0, b.h * 1.2)
+                after_label = any(
+                    o is not b
+                    and abs((o.y + o.h / 2) - bcy) <= row_gap
+                    and o.x < b.x
+                    and -2 <= b.x - (o.x + o.w) <= 12
+                    for o in boxes
+                )
+                if after_label:
                     continue
                 right_flush = (b.x + b.w) > pw - 40
                 if _is_amount(b.text):
