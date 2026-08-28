@@ -192,6 +192,28 @@ async def upload_compare(document: UploadFile = File(...), template: UploadFile 
     return {"job_id": job_id}
 
 
+@app.get("/api/jobs")
+def list_jobs():
+    jobs = []
+    for job in _jobs.values():
+        if job.get("status") != "complete" or not job.get("report"):
+            continue
+        report = job["report"]
+        assessment = report.get("assessment", {})
+        jobs.append(
+            {
+                "id": job["id"],
+                "filename": job["filename"],
+                "created": job["created"],
+                "status": "completed",
+                "score": round(assessment.get("suspicion_score", 0), 1),
+                "risk_level": assessment.get("risk_level", "LOW"),
+            }
+        )
+    jobs.sort(key=lambda j: j["created"], reverse=True)
+    return jobs
+
+
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str):
     job = _jobs.get(job_id)

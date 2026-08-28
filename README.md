@@ -40,6 +40,12 @@ cd backend
 .venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
+To reach the backend from a phone (mobile app), bind to all interfaces instead:
+
+```
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
 Terminal 2 — auth service (Better Auth, seeds the sample user on first start):
 
 ```
@@ -62,6 +68,23 @@ password: password
 ```
 
 The app is gated behind Better Auth email/password login (session cookie shared with the auth service). The Vite dev server proxies `/api/auth` → the auth service (port 4000); FastAPI proxies it too, so the single-server production build also works. For a production-like single server, use `npm run build` in `frontend` then just the backend on `http://localhost:8000`.
+
+## Mobile app (Expo Go)
+
+A native companion in `mobile/` mirrors the web app — login, document verification, region-overlay highlights, findings, history and saved reports — and talks to the same FastAPI backend.
+
+```
+cd mobile
+npm install
+npx expo start
+```
+
+Then scan the QR code with **Expo Go** (Android or iOS) on a phone on the **same Wi-Fi** as your computer. Make sure the backend is running on `0.0.0.0:8000` (see above) and the auth service is running — the app calls the backend's `/api/*` endpoints (including the proxied Better Auth endpoints).
+
+- The app auto-detects the server address from Expo Go's `hostUri` (`http://<your-computer-LAN-ip>:8000`). If the backend lives elsewhere, tap the **Settings** gear (top right, or on the login screen) and edit / *Test connection* the server address — the login screen also has a “connect your phone” explainer.
+- Sign in with the same sample account: `test@docu.com` / `password`.
+- `expo-document-picker` uploads PDF/JPG/PNG (single doc, or doc + official template for reference comparison). Results, history and saved reports are persisted locally via AsyncStorage.
+- Expo Go must support Expo SDK 57 — keep the Expo Go app up to date from your store.
 
 ## Test / dataset
 

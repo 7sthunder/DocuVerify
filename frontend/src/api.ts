@@ -1,4 +1,4 @@
-import type { JobStatus } from "./types";
+import type { JobStatus, JobSummary } from "./types";
 
 export async function uploadDocument(file: File): Promise<{ job_id: string }> {
   const fd = new FormData();
@@ -29,6 +29,12 @@ export async function uploadCompare(
 export async function getJob(jobId: string): Promise<JobStatus> {
   const r = await fetch(`/api/jobs/${jobId}`);
   if (!r.ok) throw new Error("Failed to load job");
+  return r.json();
+}
+
+export async function listJobs(): Promise<JobSummary[]> {
+  const r = await fetch("/api/jobs");
+  if (!r.ok) throw new Error("Failed to load history");
   return r.json();
 }
 

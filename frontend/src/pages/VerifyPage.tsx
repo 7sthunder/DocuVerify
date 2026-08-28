@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Finding, JobStatus } from "../types";
 import { pollJob, uploadCompare, uploadDocument } from "../api";
 import AssessmentCard from "../components/AssessmentCard";
@@ -18,12 +18,17 @@ export default function VerifyPage() {
   const [showOverlay, setShowOverlay] = useState(true);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [tplFile, setTplFile] = useState<File | null>(null);
+  const [findingPage, setFindingPage] = useState(1);
+  const [blinkSignal, setBlinkSignal] = useState<{ id: string; n: number } | null>(null);
+  const blinkCounter = useRef(0);
 
   const run = async (doc: File, tpl: File | null) => {
     setError(null);
     setPhase("uploading");
     setFilename(doc.name);
     setActiveId(null);
+    setFindingPage(1);
+    setBlinkSignal(null);
     try {
       const { job_id } = tpl ? await uploadCompare(doc, tpl) : await uploadDocument(doc);
       setJobId(job_id);
@@ -48,10 +53,17 @@ export default function VerifyPage() {
     }
   };
 
-  const selectFinding = (f: Finding) => {
+  const selectFinding = (f: Finding, fromViewer = false) => {
     setActiveId(f.id);
-    const el = document.getElementById(f.id);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const serial = serialById[f.id] ?? 0;
+    if (serial > 0) {
+      const target = Math.ceil(serial / 5);
+      if (target !== findingPage) setFindingPage(target);
+    }
+    if (fromViewer) {
+      blinkCounter.current += 1;
+      setBlinkSignal({ id: f.id, n: blinkCounter.current });
+    }
   };
 
   const reset = () => {
@@ -60,11 +72,26 @@ export default function VerifyPage() {
     setJob(null);
     setJobId(null);
     setActiveId(null);
+    setFindingPage(1);
+    setBlinkSignal(null);
     setError(null);
     setPhase("idle");
   };
 
   const report = job?.report;
+
+  const orderedFindings = useMemo(
+    () =>
+      report
+        ? [...report.findings].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+        : [],
+    [report]
+  );
+  const serialById = useMemo(() => {
+    const m: Record<string, number> = {};
+    orderedFindings.forEach((f, i) => (m[f.id] = i + 1));
+    return m;
+  }, [orderedFindings]);
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
@@ -183,7 +210,9 @@ export default function VerifyPage() {
                   page={p}
                   findings={showOverlay ? report.findings : []}
                   activeFindingId={activeId}
-                  onSelect={(f) => selectFinding(f)}
+                  onSelect={(f) => selectFinding(f, true)}
+                  serialById={serialById}
+                  blinkSignal={blinkSignal}
                 />
               ))}
             </div>
@@ -193,13 +222,17 @@ export default function VerifyPage() {
                   findings={report.findings}
                   activeId={activeId}
                   onSelect={(f) => selectFinding(f)}
+                  page={findingPage}
+                  onPageChange={setFindingPage}
+                  serialById={serialById}
+                  blinkSignal={blinkSignal}
                 />
-                <div id={activeId ?? "panel"} className="bg-white rounded-lg shadow p-5">
+                <div id="findings-detail" className="bg-white rounded-lg shadow p-5">
                   {report.findings.map((f) =>
                     f.id === activeId ? (
                       <div key={f.id}>
                         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">
-                          {f.category.replace("_", " ")} anomaly
+                          #{serialById[f.id] ?? ""} {f.category.replace("_", " ")} anomaly
                         </h3>
                         <p className="mt-1 text-sm capitalize text-slate-600">
                           Severity: <span className="font-semibold">{f.severity}</span> · module:{" "}

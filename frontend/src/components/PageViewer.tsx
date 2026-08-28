@@ -14,12 +14,16 @@ export default function PageViewer({
   findings,
   activeFindingId,
   onSelect,
+  serialById,
+  blinkSignal,
 }: {
   jobId: string;
   page: PageInfo;
   findings: Finding[];
   activeFindingId: string | null;
   onSelect: (f: Finding) => void;
+  serialById: Record<string, number>;
+  blinkSignal: { id: string; n: number } | null;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   const onPage = findings.filter((f) => f.region && f.region.page === page.index);
@@ -45,15 +49,17 @@ export default function PageViewer({
           const r = f.region!;
           const style = SEVERITY_STYLE[f.severity];
           const isActive = f.id === activeFindingId || f.id === hovered;
+          const serial = serialById[f.id] ?? 0;
+          const blinking = blinkSignal?.id === f.id;
           return (
             <button
-              key={f.id}
+              key={blinking ? `${f.id}-${blinkSignal!.n}` : f.id}
               onClick={() => onSelect(f)}
               onMouseEnter={() => setHovered(f.id)}
               onMouseLeave={() => setHovered(null)}
               className={`absolute rounded border-2 ${style.border} transition-all ${
                 isActive ? "z-10 ring-2 ring-slate-800" : "z-0"
-              }`}
+              } ${blinking ? "region-blink" : ""}`}
               style={{
                 left: `${(r.x / page.width) * 100}%`,
                 top: `${(r.y / page.height) * 100}%`,
@@ -66,7 +72,7 @@ export default function PageViewer({
                 className={`absolute -top-5 left-0 text-[9px] font-semibold px-1 rounded whitespace-nowrap ${
                   style.fill} ${style.text}`}
               >
-                {f.category.replace("_", " ")} · {style.label}
+                {serial > 0 ? `#${serial}` : ""}
               </span>
             </button>
           );

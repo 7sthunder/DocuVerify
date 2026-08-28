@@ -1,1 +1,18 @@
 @import "tailwindcss";
+
+@keyframes region-blink {
+  0%,
+  45% {
+    background-color: rgba(244, 63, 94, 0.5);
+    box-shadow: 0 0 0 3px rgba(244, 63, 94, 0.65);
+  }
+  55%,
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+.region-blink {
+  animation: region-blink 0.45s ease-in-out 2;
+}

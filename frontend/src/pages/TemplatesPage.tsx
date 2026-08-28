@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Finding, Report } from "../types";
 import { pollJob, uploadCompare, pageUrl } from "../api";
 import AssessmentCard from "../components/AssessmentCard";
@@ -35,12 +35,17 @@ export default function TemplatesPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [findingPage, setFindingPage] = useState(1);
+  const [blinkSignal, setBlinkSignal] = useState<{ id: string; n: number } | null>(null);
+  const blinkCounter = useRef(0);
 
   const run = async () => {
     if (!docFile || !tplFile) return;
     setError(null);
     setPhase("uploading");
     setActiveId(null);
+    setFindingPage(1);
+    setBlinkSignal(null);
     try {
       const { job_id } = await uploadCompare(docFile, tplFile);
       setJobId(job_id);
@@ -59,10 +64,17 @@ export default function TemplatesPage() {
     }
   };
 
-  const selectFinding = (f: Finding) => {
+  const selectFinding = (f: Finding, fromViewer = false) => {
     setActiveId(f.id);
-    const el = document.getElementById(f.id);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const serial = serialById[f.id] ?? 0;
+    if (serial > 0) {
+      const target = Math.ceil(serial / 5);
+      if (target !== findingPage) setFindingPage(target);
+    }
+    if (fromViewer) {
+      blinkCounter.current += 1;
+      setBlinkSignal({ id: f.id, n: blinkCounter.current });
+    }
   };
 
   const reset = () => {
@@ -71,12 +83,27 @@ export default function TemplatesPage() {
     setReport(null);
     setJobId(null);
     setActiveId(null);
+    setFindingPage(1);
+    setBlinkSignal(null);
     setError(null);
     setPhase("idle");
   };
 
   const stats = report ? diffStats(report.findings) : null;
   const ref = report?.reference;
+
+  const orderedFindings = useMemo(
+    () =>
+      report
+        ? [...report.findings].sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+        : [],
+    [report]
+  );
+  const serialById = useMemo(() => {
+    const m: Record<string, number> = {};
+    orderedFindings.forEach((f, i) => (m[f.id] = i + 1));
+    return m;
+  }, [orderedFindings]);
 
   return (
     <main className="max-w-6xl mx-auto px-4 py-8">
@@ -197,7 +224,9 @@ export default function TemplatesPage() {
                   page={p}
                   findings={showOverlay ? report.findings : []}
                   activeFindingId={activeId}
-                  onSelect={(f) => selectFinding(f)}
+                  onSelect={(f) => selectFinding(f, true)}
+                  serialById={serialById}
+                  blinkSignal={blinkSignal}
                 />
               ))}
               {report.pages.length === 0 && jobId && (
@@ -217,13 +246,17 @@ export default function TemplatesPage() {
                   findings={report.findings}
                   activeId={activeId}
                   onSelect={(f) => selectFinding(f)}
+                  page={findingPage}
+                  onPageChange={setFindingPage}
+                  serialById={serialById}
+                  blinkSignal={blinkSignal}
                 />
-                <div id={activeId ?? "panel"} className="bg-white rounded-lg shadow p-5">
+                <div id="findings-detail" className="bg-white rounded-lg shadow p-5">
                   {report.findings.map((f) =>
                     f.id === activeId ? (
                       <div key={f.id}>
                         <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide capitalize">
-                          {f.category} · {f.module.replace("_", " ")}
+                          #{serialById[f.id] ?? ""} {f.category} · {f.module.replace("_", " ")}
                         </h3>
                         <p className="mt-1 text-sm capitalize text-slate-600">
                           Severity: <span className="font-semibold">{f.severity}</span> · score{" "}

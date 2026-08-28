@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import type { Assessment, Finding } from "../types";
 import AssessmentCard from "./AssessmentCard";
 import FindingList from "./FindingList";
@@ -71,6 +72,14 @@ export default function SampleReportModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const serialById = useMemo(() => {
+    const m: Record<string, number> = {};
+    [...SAMPLE_FINDINGS]
+      .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+      .forEach((f, i) => (m[f.id] = i + 1));
+    return m;
+  }, []);
+
   if (!open) return null;
 
   return (
@@ -135,7 +144,7 @@ export default function SampleReportModal({
 
           <div className="space-y-4">
             <AssessmentCard assessment={SAMPLE_ASSESSMENT} />
-            <FindingList findings={SAMPLE_FINDINGS} activeId={null} onSelect={() => {}} />
+            <FindingList findings={SAMPLE_FINDINGS} activeId={null} onSelect={() => {}} page={1} onPageChange={() => {}} serialById={serialById} />
           </div>
         </div>
       </div>

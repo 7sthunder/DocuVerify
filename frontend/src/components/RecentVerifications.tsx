@@ -1,46 +1,59 @@
+import { useEffect, useState } from "react";
 import { ArrowRight, FileIcon } from "./icons";
 import SectionHeading from "./SectionHeading";
+import { listJobs } from "../api";
+import type { JobSummary } from "../types";
 
-interface Row {
-  document: string;
-  date: string;
-  score: string;
-  risk: { label: string; tone: "bg-red-100 text-red-700" | "bg-emerald-100 text-emerald-700" | "bg-amber-100 text-amber-700" };
-  status: string;
+type RiskTone = "bg-red-100 text-red-700" | "bg-emerald-100 text-emerald-700" | "bg-amber-100 text-amber-700";
+
+const RISK_TONE: Record<JobSummary["risk_level"], RiskTone> = {
+  HIGH: "bg-red-100 text-red-700",
+  MEDIUM: "bg-amber-100 text-amber-700",
+  LOW: "bg-emerald-100 text-emerald-700",
+};
+
+const RISK_LABEL: Record<JobSummary["risk_level"], string> = {
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+};
+
+function formatDate(ts: number): string {
+  return new Date(ts * 1000).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-const ROWS: Row[] = [
-  {
-    document: "Certificate_JohnDoe.pdf",
-    date: "27 May 2026, 10:30 AM",
-    score: "62/100",
-    risk: { label: "High", tone: "bg-red-100 text-red-700" },
-    status: "Completed",
-  },
-  {
-    document: "Invoice_2026_045.png",
-    date: "27 May 2026, 09:15 AM",
-    score: "85/100",
-    risk: { label: "Low", tone: "bg-emerald-100 text-emerald-700" },
-    status: "Completed",
-  },
-  {
-    document: "ID_Card_Employee.jpg",
-    date: "26 May 2026, 04:45 PM",
-    score: "44/100",
-    risk: { label: "Medium", tone: "bg-amber-100 text-amber-700" },
-    status: "Completed",
-  },
-];
-
 export default function RecentVerifications({ onViewAll }: { onViewAll: () => void }) {
+  const [jobs, setJobs] = useState<JobSummary[] | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listJobs()
+      .then((rows) => alive && setJobs(rows))
+      .catch(() => alive && setJobs([]));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const rows = jobs ?? [];
+
   return (
     <section>
       <div className="flex items-end justify-between gap-4">
         <SectionHeading
           kicker="Activity"
           title="Recent Verifications"
-          description="Sample preview data — run your first verification to see real results here."
+          description={
+            rows.length
+              ? "Your most recent document verifications and their outcomes."
+              : "Run your first verification to see real results here."
+          }
         />
         <button
           onClick={onViewAll}
@@ -64,53 +77,65 @@ export default function RecentVerifications({ onViewAll }: { onViewAll: () => vo
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {ROWS.map((r) => (
-                <tr key={r.document} className="transition-colors hover:bg-slate-50">
+              {rows.map((r) => (
+                <tr key={r.id} className="transition-colors hover:bg-slate-50">
                   <td className="px-5 py-3.5">
                     <span className="flex items-center gap-2.5 font-medium text-slate-800">
                       <FileIcon className="h-4 w-4 text-indigo-500" />
-                      {r.document}
+                      {r.filename}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500">{r.date}</td>
-                  <td className="px-5 py-3.5 font-semibold text-slate-800">{r.score}</td>
+                  <td className="px-5 py-3.5 text-slate-500">{formatDate(r.created)}</td>
+                  <td className="px-5 py-3.5 font-semibold text-slate-800">{Math.round(r.score)}/100</td>
                   <td className="px-5 py-3.5">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${r.risk.tone}`}>
-                      {r.risk.label}
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${RISK_TONE[r.risk_level]}`}>
+                      {RISK_LABEL[r.risk_level]}
                     </span>
                   </td>
                   <td className="px-5 py-3.5">
                     <span className="inline-flex items-center gap-1.5 text-slate-600">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                      {r.status}
+                      Completed
                     </span>
                   </td>
                 </tr>
               ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-sm text-slate-500">
+                    No verifications yet — run your first verification to see real results here.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
 
         <ul className="divide-y divide-slate-100 md:hidden">
-          {ROWS.map((r) => (
-            <li key={r.document} className="px-4 py-4">
+          {rows.map((r) => (
+            <li key={r.id} className="px-4 py-4">
               <div className="flex items-center gap-2.5">
                 <FileIcon className="h-4 w-4 shrink-0 text-indigo-500" />
-                <span className="truncate text-sm font-medium text-slate-800">{r.document}</span>
-                <span className={`ml-auto whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${r.risk.tone}`}>
-                  {r.risk.label}
+                <span className="truncate text-sm font-medium text-slate-800">{r.filename}</span>
+                <span className={`ml-auto whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${RISK_TONE[r.risk_level]}`}>
+                  {RISK_LABEL[r.risk_level]}
                 </span>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-                <span>{r.date}</span>
-                <span className="font-semibold text-slate-700">Score {r.score}</span>
+                <span>{formatDate(r.created)}</span>
+                <span className="font-semibold text-slate-700">Score {Math.round(r.score)}/100</span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  {r.status}
+                  Completed
                 </span>
               </div>
             </li>
           ))}
+          {rows.length === 0 && (
+            <li className="px-4 py-8 text-center text-sm text-slate-500">
+              No verifications yet — run your first verification to see real results here.
+            </li>
+          )}
         </ul>
       </div>
 

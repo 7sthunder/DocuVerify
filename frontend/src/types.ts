@@ -77,3 +77,12 @@ export interface JobStatus {
   error: string | null;
   report: Report | null;
 }
+
+export interface JobSummary {
+  id: string;
+  filename: string;
+  created: number;
+  status: "completed";
+  score: number;
+  risk_level: "LOW" | "MEDIUM" | "HIGH";
+}
