@@ -64,13 +64,13 @@ export default function HeroSection({ onVerify, onViewSample }: HeroSectionProps
           </div>
         </div>
 
-        <div className="relative mt-2 flex justify-center lg:mt-0">
-          <div>
+        <div className="mt-2 flex flex-col items-center lg:mt-0">
+          <div className="relative">
             <DocumentPreview />
             <AnalysisSummaryCard className="relative z-10 mx-auto mt-4 ml-auto max-w-full lg:absolute lg:mt-0 lg:-bottom-8 lg:-right-8" />
           </div>
 
-          <div className="mt-8 flex items-center justify-center gap-2 whitespace-nowrap text-[10px] font-semibold uppercase tracking-widest text-slate-400 lg:mt-14 lg:pl-10">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 lg:pl-10">
             <span>Document</span>
             <ArrowRight className="w-3 h-3" />
             <span>Forensic Analysis</span>
