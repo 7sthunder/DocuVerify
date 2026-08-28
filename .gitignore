@@ -8,18 +8,32 @@ env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.pyc
 
-# Environment / secrets
+# Environment / secrets (keep .env.example tracked)
 .env
-.env.local
+.env.*
+!.env.example
 
 # Node / frontend
 node_modules/
 dist/
 .vite/
+*.tsbuildinfo
 
 # Runtime artifacts
 *.log
 jobs/
 data/
 uploads/
+*.db
+*.sqlite3
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
