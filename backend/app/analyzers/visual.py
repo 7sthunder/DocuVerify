@@ -64,7 +64,7 @@ class VisualAnalyzer(Analyzer):
                 for c in range(cols):
                     if text_mask[r, c] or r < 2 or c < 2 or r >= rows - 2 or c >= cols - 2:
                         continue
-                    if float(sharp[r, c]) > ref * 2.2:
+                    if float(sharp[r, c]) > ref * 2.6:
                         outlier[r, c] = 1
 
             num, labels, stats, _ = cv2.connectedComponentsWithStats(outlier, connectivity=8)
@@ -86,15 +86,18 @@ class VisualAnalyzer(Analyzer):
                 w *= TILE
                 h *= TILE
                 cluster_sharp = float(np.median(sharp[y // TILE : (y + h) // TILE, x // TILE : (x + w) // TILE]))
-                score = min(1.0, 0.3 + (area * 0.03))
+                if cluster_sharp >= ref * 3.0 and area >= 24:
+                    severity, score = "medium", min(1.0, 0.4 + (area * 0.015))
+                else:
+                    severity, score = "low", min(1.0, 0.25 + (area * 0.015))
                 findings.append(
                     Finding(
                         id=_next_id("vis"),
                         category=self.category,
                         module=self.name,
-                        severity="medium",
+                        severity=severity,
                         score=round(score, 3),
-                        confidence=0.6,
+                        confidence=0.55,
                         region=Region(page=page.index, x=x, y=y, w=w, h=h),
                         evidence=[
                             f"Region average sharpness = {cluster_sharp:.0f} vs text-content reference = {ref:.0f}",
@@ -132,23 +135,31 @@ def analyze_embedded_images(doc: Document) -> list[Finding]:
             if not bbox or not iw:
                 continue
             placed_w = bbox[2] - bbox[0]
-            if placed_w <= 0:
+            placed_h = bbox[3] - bbox[1]
+            if placed_w <= 0 or placed_h <= 0:
+                continue
+            # Skip full-bleed / page-size artwork (backgrounds, photos).
+            page_w, page_h = pdf[page_no].rect.width, pdf[page_no].rect.height
+            if placed_w > 0.6 * page_w or placed_h > 0.5 * page_h:
                 continue
             placed_dpi = (iw / placed_w) * 72
-            if placed_dpi >= 120:
+            if placed_dpi >= 90:
                 continue
             x, y = bbox[0] * k, bbox[1] * k
-            w, h = (bbox[2] - bbox[0]) * k, (bbox[3] - bbox[1]) * k
-            placed_h = bbox[3] - bbox[1]
+            w, h = placed_w * k, placed_h * k
             factor = max(iw / placed_w, ih / placed_h)
+            if placed_dpi < 70:
+                severity, score = "medium", min(1.0, 0.35 + (factor * 0.05))
+            else:
+                severity, score = "low", min(1.0, 0.3 + (factor * 0.04))
             findings.append(
                 Finding(
                     id=_next_id("visimg"),
                     category="visual",
                     module="visual_analyzer",
-                    severity="medium",
-                    score=0.6,
-                    confidence=0.7,
+                    severity=severity,
+                    score=round(score, 3),
+                    confidence=0.6,
                     region=Region(page=page_no, x=x, y=y, w=w, h=h),
                     evidence=[
                         f"Embedded image placed at {placed_dpi:.0f} DPI (nominal ~150+); source {iw}x{ih}px",

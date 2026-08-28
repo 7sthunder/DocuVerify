@@ -17,10 +17,27 @@ STOP_WORDS = {
     "board", "government", "ministry", "commission", "academy", "school", "emblen",
 }
 
+CERT_HINTS = (
+    "certificate", "certif", "to certify", "completion", "awarded", "degree", "bachelor",
+    "master", "diploma", "graduate", "graduat", "cgpa", " sgpa", "gpa", "percentage",
+    "percent", "semester", "examination", "transcript", "statement of marks", "marksheet",
+    "marks sheet", "hall ticket", "admit card", "academic", "registration number",
+    "reg no", "roll number", "testamur", "to the body", "curriculum",
+)
+
 _YEAR_RANGE_RE = re.compile(r"(\d{4})\s*[-–]\s*(\d{4})")
 _DATE_TEXT_RE = re.compile(r"(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{4})", re.I)
 _CGPA_RE = re.compile(r"cgpa\s*[:.\-]?\s*([\d.,]+)\s*\(?\s*(?:out\s*of|of|/)\s*([\d.,]+)", re.I)
 _REG_RE = re.compile(r"(?:reg|reg\.? no|registration)\s*[:\-]?\s*([A-Z0-9\-]{5,20})", re.I)
+
+
+def _document_text(doc: Document) -> str:
+    return " ".join(b.text for p in doc.pages for b in (p.textboxes if p.textboxes else p.ocr_boxes)).lower()
+
+
+def _certificate_like(doc: Document) -> bool:
+    text = _document_text(doc)
+    return any(h in text for h in CERT_HINTS)
 
 
 def _box_for_doc(doc: Document) -> list:
@@ -87,6 +104,8 @@ class SemanticAnalyzer(Analyzer):
 
     def analyze(self, doc: Document) -> list[Finding]:
         findings: list[Finding] = []
+        if not _certificate_like(doc):
+            return findings
         f = _extract_fields(doc)
 
         if f["cgpa"] is not None and f["cgpa_scale"]:
@@ -176,8 +195,8 @@ class SemanticAnalyzer(Analyzer):
                     id=_next_id("sem"),
                     category=self.category,
                     module=self.name,
-                    severity="medium",
-                    score=0.5,
+                    severity="low",
+                    score=0.3,
                     confidence=0.6,
                     evidence=[f"Distinct full-name candidates found: {f['names']}"],
                     explanation=(

@@ -23,6 +23,7 @@ WEIGHTS = {
     "metadata": 0.10,
 }
 METADATA_SCORE_CAP = 0.4
+LLM_SCORE_CAP = 0.5
 
 LLM_ENABLED = os.getenv("LLM_ENABLED", "false").lower() in ("1", "true", "yes")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")

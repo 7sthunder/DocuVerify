@@ -2,6 +2,7 @@ from .config import (
     CATEGORY_LABELS,
     HIGH_THRESHOLD,
     LOW_THRESHOLD,
+    LLM_SCORE_CAP,
     METADATA_SCORE_CAP,
     WEIGHTS,
 )
@@ -27,13 +28,17 @@ def category_score(findings: list[Finding]) -> float:
     return min(1.0, top * boost)
 
 
+def _bucket(f: Finding) -> str:
+    return "semantic_llm" if f.module == "semantic_llm" else f.category
+
+
 def aggregate(doc, findings: list[Finding], weights: dict | None = None) -> Assessment:
     from .llm import is_enabled
 
     WEIGHTS_ACTIVE = weights or WEIGHTS
     by_cat: dict[str, list[Finding]] = {}
     for f in findings:
-        by_cat.setdefault(f.category, []).append(f)
+        by_cat.setdefault(_bucket(f), []).append(f)
 
     unavailable = set()
     if getattr(doc, "pdf_text_present", False) is False:
@@ -56,6 +61,9 @@ def aggregate(doc, findings: list[Finding], weights: dict | None = None) -> Asse
         score = category_score(fs)
         if cat == "metadata":
             score = min(score, METADATA_SCORE_CAP)
+            severity = fs[0].severity if fs else None
+        elif cat == "semantic_llm":
+            score = min(score, LLM_SCORE_CAP)
             severity = fs[0].severity if fs else None
         else:
             severity = "high" if any(f.severity == "high" for f in fs) else (

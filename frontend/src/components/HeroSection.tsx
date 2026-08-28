@@ -1,5 +1,4 @@
-import AnalysisSummaryCard from "./AnalysisSummaryCard";
-import DocumentPreview from "./DocumentPreview";
+import HeroCarousel from "./HeroCarousel";
 import { ArrowRight, CheckSmall, SparkIcon } from "./icons";
 
 interface HeroSectionProps {
@@ -65,12 +64,9 @@ export default function HeroSection({ onVerify, onViewSample }: HeroSectionProps
         </div>
 
         <div className="mt-2 flex flex-col items-center lg:mt-0">
-          <div className="relative">
-            <DocumentPreview />
-            <AnalysisSummaryCard className="relative z-10 mx-auto mt-4 ml-auto max-w-full lg:absolute lg:mt-0 lg:-bottom-8 lg:-right-8" />
-          </div>
+          <HeroCarousel />
 
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 lg:pl-10">
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] font-semibold uppercase tracking-widest text-slate-400 lg:pl-10">
             <span>Document</span>
             <ArrowRight className="w-3 h-3" />
             <span>Forensic Analysis</span>

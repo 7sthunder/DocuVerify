@@ -3,7 +3,7 @@ import re
 
 import httpx
 
-from .analyzers.semantic import _extract_fields
+from .analyzers.semantic import _certificate_like, _extract_fields
 from .config import LLM_API_KEY, LLM_BASE_URL, LLM_ENABLED, LLM_MODEL
 from .document import Document
 from .schemas import Finding, Region
@@ -83,6 +83,8 @@ def _parse_payload(content: str) -> dict | None:
 def llm_analyze(doc: Document, findings: list[Finding]) -> tuple[list[Finding], str | None, str | None]:
     if not is_enabled():
         return [], None, None
+    if not _certificate_like(doc):
+        return [], None, "Non-certificate document; LLM semantic checks skipped"
     fields = _field_summary(doc)
     if not fields:
         return [], None, "No structured fields to reason over"

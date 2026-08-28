@@ -11,6 +11,14 @@ def _family(font: str) -> str:
     return re.sub(r"-(Bold|Italic|Roman|Regular|Oblique|BoldItalic|Light|Medium)$", "", font)
 
 
+def _symbolish(text: str) -> bool:
+    """True for icon-style glyph spans (currency marks, bullets, checkmarks)."""
+    t = re.sub(r"\s", "", text)
+    if not t or len(t) < 2:
+        return True
+    return not any(c.isalnum() for c in t)
+
+
 class TypographyAnalyzer(Analyzer):
     name = "typography_analyzer"
     category = "typography"
@@ -45,15 +53,21 @@ class TypographyAnalyzer(Analyzer):
             for b in page.textboxes:
                 if not b.font or not b.size:
                     continue
+                if _symbolish(b.text):
+                    continue
                 fam = _family(b.font)
                 region = Region(page=b.page, x=b.x, y=b.y, w=b.w, h=b.h)
                 fam_n = fam_counts[fam]
                 if fam not in dominant_families:
                     ratio = b.size / global_median if global_median else 1.0
-                    if fam_n == 1 and (ratio > 1.35 or ratio < 0.7):
-                        severity, score = "high", min(1.0, abs(ratio - 1) + 0.3)
-                    elif fam_n <= 2:
-                        severity, score = "medium", 0.55
+                    if fam_n == 1:
+                        severity, score = (
+                            ("high", min(1.0, abs(ratio - 1) + 0.25))
+                            if (ratio > 1.6 or ratio < 0.55)
+                            else ("medium", 0.5)
+                        )
+                    elif ratio < 0.7 or ratio > 1.5:
+                        severity, score = ("medium", 0.5) if fam_n <= 3 else ("low", 0.4)
                     else:
                         severity, score = "low", 0.35
                     findings.append(
@@ -63,7 +77,7 @@ class TypographyAnalyzer(Analyzer):
                             module=self.name,
                             severity=severity,
                             score=round(score, 3),
-                            confidence=0.7,
+                            confidence=0.65,
                             region=region,
                             evidence=[
                                 f"Font '{b.font}' ({fam} family) appears {fam_n}x in the document while dominant families "
@@ -82,15 +96,24 @@ class TypographyAnalyzer(Analyzer):
                     same_font = [s for s in font_sizes.get(b.font, []) if s > 0]
                     if len(same_font) >= 3:
                         fam_med = median(same_font)
-                        if fam_med > 0 and b.size > fam_med * 1.45:
+                        if fam_med > 0 and b.size >= fam_med * 1.6:
+                            severity, score = (
+                                ("high", min(1.0, b.size / (fam_med * 2.6)))
+                                if b.size >= fam_med * 2.6
+                                else (
+                                    ("medium", 0.4)
+                                    if b.size >= fam_med * 1.8
+                                    else ("low", 0.3)
+                                )
+                            )
                             findings.append(
                                 Finding(
                                     id=_next_id("typ"),
                                     category=self.category,
                                     module=self.name,
-                                    severity="medium",
-                                    score=0.5,
-                                    confidence=0.6,
+                                    severity=severity,
+                                    score=round(score, 3),
+                                    confidence=0.55,
                                     region=region,
                                     evidence=[
                                         f"Font family '{fam}' median size {round(fam_med, 1)}px; this span is {round(b.size, 1)}px "
