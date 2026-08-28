@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import re
 import shutil
 import time
@@ -7,9 +8,10 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import httpx
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .extractor import extract
@@ -24,6 +26,8 @@ JOBS_DIR.mkdir(exist_ok=True)
 FRONTEND_DIST = ROOT.parent.parent / "frontend" / "dist"
 JOB_TTL_SECONDS = 2 * 3600
 CLEANUP_INTERVAL = 30 * 60
+
+AUTH_PROXY_URL = os.getenv("AUTH_PROXY_URL", "http://127.0.0.1:4000")
 
 _jobs: dict[str, dict] = {}
 
@@ -213,6 +217,35 @@ def get_page(job_id: str, page_name: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Page not found")
     return FileResponse(path, media_type="image/png")
+
+
+_PROXY_SKIP_HEADERS = {"host", "content-length", "connection"}
+
+
+@app.api_route("/api/auth/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+async def proxy_auth(path: str, request: Request):
+    url = f"{AUTH_PROXY_URL}/api/auth/{path}"
+    headers = {
+        k: v for k, v in request.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS
+    }
+    headers["x-forwarded-host"] = request.headers.get("host", "localhost:8000")
+    body = await request.body()
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(
+                request.method, url, headers=headers, content=body
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Auth service unreachable: {exc}")
+    response = Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get("content-type"),
+    )
+    for name, value in resp.headers.items():
+        if name.lower() in ("set-cookie",):
+            response.raw_headers.append((name.lower().encode(), value.encode()))
+    return response
 
 
 if FRONTEND_DIST.exists():

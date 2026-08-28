@@ -1,13 +1,17 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Finding, JobStatus } from "./types";
 import { pageUrl, pollJob, uploadCompare, uploadDocument } from "./api";
 import AssessmentCard from "./components/AssessmentCard";
 import PageViewer from "./components/PageViewer";
 import FindingList from "./components/FindingList";
+import FileDropzone from "./components/FileDropzone";
+import LoginPage from "./components/LoginPage";
+import { authClient } from "./auth-client";
 
 type Phase = "idle" | "uploading" | "processing" | "done" | "error";
 
 export default function App() {
+  const session = authClient.useSession();
   const [phase, setPhase] = useState<Phase>("idle");
   const [jobId, setJobId] = useState<string | null>(null);
   const [filename, setFilename] = useState("");
@@ -15,8 +19,6 @@ export default function App() {
   const [job, setJob] = useState<JobStatus | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showOverlay, setShowOverlay] = useState(true);
-  const docRef = useRef<HTMLInputElement>(null);
-  const tplRef = useRef<HTMLInputElement>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [tplFile, setTplFile] = useState<File | null>(null);
 
@@ -69,6 +71,18 @@ export default function App() {
 
   const report = job?.report;
 
+  if (session.isPending) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+        <div className="mx-auto w-10 h-10 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!session.data) {
+    return <LoginPage />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="bg-white border-b border-slate-200">
@@ -77,13 +91,28 @@ export default function App() {
             <h1 className="text-xl font-bold text-slate-900">DocuVerify</h1>
             <p className="text-xs text-slate-500">Intelligent Document Authenticity &amp; Forgery Detection</p>
           </div>
-          {jobId && report && (
-            <img
-              src={pageUrl(jobId, report.pages[0].image)}
-              alt="uploaded"
-              className="hidden sm:block h-10 w-auto border rounded"
-            />
-          )}
+          <div className="flex items-center gap-3">
+            {jobId && report && (
+              <img
+                src={pageUrl(jobId, report.pages[0].image)}
+                alt="uploaded"
+                className="hidden sm:block h-10 w-auto border rounded"
+              />
+            )}
+            <span className="hidden sm:block text-sm text-slate-600">
+              {session.data?.user.email}
+            </span>
+            <button
+              onClick={async () => {
+                await authClient.signOut();
+                reset();
+              }}
+              className="text-sm text-slate-500 hover:text-slate-900"
+              title="Sign out"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
 
@@ -96,48 +125,19 @@ export default function App() {
               produces an explainable forensic assessment with highlighted suspicious regions.
             </p>
             <div className="space-y-3 text-left">
-              <div className="border rounded-lg p-4">
-                <label className="text-sm font-medium text-slate-700">Document to verify *</label>
-                <button
-                  onClick={() => docRef.current?.click()}
-                  className="mt-2 w-full px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm hover:bg-slate-700"
-                >
-                  {docFile ? `✓ ${docFile.name}` : "Choose document"}
-                </button>
-                <input
-                  ref={docRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                  onChange={(e) => setDocFile(e.target.files?.[0] ?? null)}
-                />
-              </div>
-              <div className="border rounded-lg p-4">
-                <label className="text-sm font-medium text-slate-700">
-                  Official template <span className="text-slate-400">(optional — enables reference comparison)</span>
-                </label>
-                <button
-                  onClick={() => tplRef.current?.click()}
-                  className="mt-2 w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50"
-                >
-                  {tplFile ? `✓ ${tplFile.name}` : "Choose template"}
-                </button>
-                {tplFile && (
-                  <button
-                    onClick={() => setTplFile(null)}
-                    className="mt-1 text-xs text-red-500 hover:underline"
-                  >
-                    Remove template
-                  </button>
-                )}
-                <input
-                  ref={tplRef}
-                  type="file"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  className="hidden"
-                  onChange={(e) => setTplFile(e.target.files?.[0] ?? null)}
-                />
-              </div>
+              <FileDropzone
+                file={docFile}
+                onSelect={setDocFile}
+                label="Document to verify *"
+                accent
+              />
+              <FileDropzone
+                file={tplFile}
+                onSelect={setTplFile}
+                onRemove={() => setTplFile(null)}
+                label="Official template"
+                hint="Optional — enables reference comparison"
+              />
               <button
                 disabled={!docFile}
                 onClick={() => docFile && run(docFile, tplFile)}
