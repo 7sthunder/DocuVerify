@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ArrowRight, FileIcon } from "./icons";
 import SectionHeading from "./SectionHeading";
 import { listJobs } from "../api";
@@ -28,7 +29,7 @@ function formatDate(ts: number): string {
   });
 }
 
-export default function RecentVerifications({ onViewAll }: { onViewAll: () => void }) {
+export default function RecentVerifications({ onViewAll, onOpen }: { onViewAll: () => void; onOpen?: (id: string) => void }) {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
 
   useEffect(() => {
@@ -78,7 +79,11 @@ export default function RecentVerifications({ onViewAll }: { onViewAll: () => vo
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((r) => (
-                <tr key={r.id} className="transition-colors hover:bg-slate-50">
+                <tr
+                  key={r.id}
+                  className={`transition-colors ${onOpen ? "cursor-pointer hover:bg-slate-100" : "hover:bg-slate-50"}`}
+                  onClick={() => onOpen?.(r.id)}
+                >
                   <td className="px-5 py-3.5">
                     <span className="flex items-center gap-2.5 font-medium text-slate-800">
                       <FileIcon className="h-4 w-4 text-indigo-500" />
@@ -112,8 +117,12 @@ export default function RecentVerifications({ onViewAll }: { onViewAll: () => vo
         </div>
 
         <ul className="divide-y divide-slate-100 md:hidden">
-          {rows.map((r) => (
-            <li key={r.id} className="px-4 py-4">
+              {rows.map((r) => (
+                <li
+                  key={r.id}
+                  className={`px-4 py-4 ${onOpen ? "cursor-pointer hover:bg-slate-50" : ""}`}
+                  onClick={() => onOpen?.(r.id)}
+                >
               <div className="flex items-center gap-2.5">
                 <FileIcon className="h-4 w-4 shrink-0 text-indigo-500" />
                 <span className="truncate text-sm font-medium text-slate-800">{r.filename}</span>

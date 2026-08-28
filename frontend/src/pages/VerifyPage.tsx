@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { Finding, JobStatus } from "../types";
-import { pollJob, uploadCompare, uploadDocument } from "../api";
+import { getJob, pollJob, uploadCompare, uploadDocument } from "../api";
 import AssessmentCard from "../components/AssessmentCard";
 import PageViewer from "../components/PageViewer";
 import FindingList from "../components/FindingList";
@@ -21,6 +22,40 @@ export default function VerifyPage() {
   const [findingPage, setFindingPage] = useState(1);
   const [blinkSignal, setBlinkSignal] = useState<{ id: string; n: number } | null>(null);
   const blinkCounter = useRef(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const finishJob = (done: JobStatus) => {
+    setJob(done);
+    if (done.status === "complete") setPhase("done");
+    else {
+      setError(done.error ?? "Analysis failed");
+      setPhase("error");
+    }
+  };
+
+  // Open a previously analyzed document from history: /verify?job=<id>
+  useEffect(() => {
+    const id = searchParams.get("job");
+    if (!id || phase !== "idle") return;
+    setPhase("processing");
+    setJobId(id);
+    (async () => {
+      try {
+        const j = await getJob(id);
+        setFilename(j.filename || "document");
+        if (j.status === "complete") finishJob(j);
+        else if (j.status === "failed") finishJob(j);
+        else {
+          const done = await pollJob(id, (tick) => setJob(tick));
+          finishJob(done);
+        }
+      } catch {
+        setError("Could not load that report — it may have expired. Verify the document again.");
+        setPhase("error");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const run = async (doc: File, tpl: File | null) => {
     setError(null);
@@ -29,6 +64,7 @@ export default function VerifyPage() {
     setActiveId(null);
     setFindingPage(1);
     setBlinkSignal(null);
+    if (searchParams.get("job")) setSearchParams({});
     try {
       const { job_id } = tpl ? await uploadCompare(doc, tpl) : await uploadDocument(doc);
       setJobId(job_id);
@@ -41,12 +77,7 @@ export default function VerifyPage() {
           setPhase("error");
         }
       });
-      setJob(done);
-      if (done.status === "complete") setPhase("done");
-      else {
-        setError(done.error ?? "Analysis failed");
-        setPhase("error");
-      }
+      finishJob(done);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
       setPhase("error");
@@ -60,9 +91,14 @@ export default function VerifyPage() {
       const target = Math.ceil(serial / 5);
       if (target !== findingPage) setFindingPage(target);
     }
-    if (fromViewer) {
-      blinkCounter.current += 1;
-      setBlinkSignal({ id: f.id, n: blinkCounter.current });
+    blinkCounter.current += 1;
+    setBlinkSignal({ id: f.id, n: blinkCounter.current });
+    if (!fromViewer && f.region) {
+      // Point the user at the highlighted region on the page when picking a finding.
+      document.getElementById(`page-${f.region.page}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
     }
   };
 
@@ -76,6 +112,7 @@ export default function VerifyPage() {
     setBlinkSignal(null);
     setError(null);
     setPhase("idle");
+    if (searchParams.get("job")) setSearchParams({});
   };
 
   const report = job?.report;

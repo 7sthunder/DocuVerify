@@ -30,7 +30,7 @@ export default function PageViewer({
   if (!onPage.length) return null;
 
   return (
-    <div className="bg-white rounded-lg shadow p-5">
+    <div id={`page-${page.index}`} className="bg-white rounded-lg shadow p-5">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-slate-800">Page {page.index + 1}</h3>
         <div className="flex gap-3 text-[11px] text-slate-500">

@@ -54,7 +54,7 @@ export default function App() {
       />
 
       <Routes>
-        <Route path="/" element={<Dashboard onVerify={() => navigate("/verify")} onOpenHistory={() => navigate("/history")} />} />
+        <Route path="/" element={<Dashboard onVerify={() => navigate("/verify")} onOpenHistory={() => navigate("/history")} onOpenJob={(id) => navigate(`/verify?job=${id}`)} />} />
         <Route path="/verify" element={<VerifyPage />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/templates" element={<TemplatesPage />} />

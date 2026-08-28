@@ -9,9 +9,11 @@ import TrustBanner from "./TrustBanner";
 export default function Dashboard({
   onVerify,
   onOpenHistory,
+  onOpenJob,
 }: {
   onVerify: () => void;
   onOpenHistory: () => void;
+  onOpenJob: (id: string) => void;
 }) {
   const [sampleOpen, setSampleOpen] = useState(false);
 
@@ -22,7 +24,7 @@ export default function Dashboard({
       <div className="mt-12 space-y-12">
         <HowItWorks />
         <AnalysisCategories />
-        <RecentVerifications onViewAll={onOpenHistory} />
+        <RecentVerifications onViewAll={onOpenHistory} onOpen={onOpenJob} />
         <TrustBanner />
       </div>
 
