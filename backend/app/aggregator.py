@@ -28,6 +28,8 @@ def category_score(findings: list[Finding]) -> float:
 
 
 def aggregate(doc, findings: list[Finding]) -> Assessment:
+    from .llm import is_enabled
+
     by_cat: dict[str, list[Finding]] = {}
     for f in findings:
         by_cat.setdefault(f.category, []).append(f)
@@ -37,6 +39,8 @@ def aggregate(doc, findings: list[Finding]) -> Assessment:
         unavailable.add("typography")
     if not (getattr(doc, "pdf_text_present", False) and any(p.ocr_boxes for p in doc.pages)):
         unavailable.add("text_layer")
+    if not is_enabled():
+        unavailable.add("semantic_llm")
 
     statuses: list[CategoryStatus] = []
     active: list[str] = []

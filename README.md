@@ -75,7 +75,15 @@ Reference results (computed from actual runs, `spike/evaluate.py`):
 - Suspicion score is an evidence-based indicator, **not** a calibrated probability of forgery.
 - Signals are heuristic; the report always includes the disclaimer: *forensic indicators are algorithmic signals, not legal proof of forgery.*
 
-## Roadmap (Phase 5, optional)
+## LLM layer (optional)
 
-- LLM reasoning + prose via OpenRouter (needs `OPENROUTER_API_KEY`) on top of extracted evidence
+When `backend/.env` has `LLM_ENABLED=true` + a valid key, the pipeline adds a semantic-reasoning pass on top of the deterministic analyzers (an OpenAI-compatible chat call), producing:
+
+- additional semantic-inconsistency findings (`semantic_llm` module) with highlighted regions
+- a natural-language executive summary
+
+Free OpenRouter model currently in use: `minimax/minimax-m3:free` (swap `LLM_MODEL` is one line). If a free model is rate-limited, the pipeline falls back gracefully — the deterministic analyzers always deliver the full report.
+
+## Roadmap (Phase 5, remaining)
+
 - Reference Template Mode — compare an uploaded doc against an official template
