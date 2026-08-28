@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { LogoIcon } from "./icons";
 
 function Highlight({
@@ -5,7 +6,7 @@ function Highlight({
   marker,
   tone,
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   marker: number;
   tone: "red" | "amber";
 }) {
