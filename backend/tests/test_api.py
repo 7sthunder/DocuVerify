@@ -1,0 +1,77 @@
+import sys
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from app.main import app
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app) as c:
+        yield c
+
+
+def _upload(client, filename: str) -> dict:
+    path = ROOT / "sample_data" / filename
+    with open(path, "rb") as f:
+        resp = client.post(
+            "/api/documents",
+            files={"file": (filename, f, {"pdf": "application/pdf"}.get(path.suffix, "application/octet-stream"))},
+        )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def _wait(client, job_id: str) -> dict:
+    for _ in range(240):
+        job = client.get(f"/api/jobs/{job_id}").json()
+        if job["status"] in ("complete", "failed"):
+            return job
+        import time
+
+        time.sleep(0.25)
+    raise TimeoutError("job did not finish")
+
+
+def test_upload_rejects_invalid_file(client):
+    resp = client.post(
+        "/api/documents", files={"file": ("fake.pdf", b"not a pdf", "application/pdf")}
+    )
+    assert resp.status_code == 400
+
+
+def test_upload_genuine_low(client):
+    job = _wait(client, _upload(client, "genuine_cert.pdf")["job_id"])
+    assert job["status"] == "complete"
+    assert job["error"] is None
+    a = job["report"]["assessment"]
+    assert a["risk_level"] == "LOW"
+    assert a["suspicion_score"] < 30
+
+
+def test_upload_forged_demo_medium(client):
+    job = _wait(client, _upload(client, "forged_demo.pdf")["job_id"])
+    assert job["status"] == "complete"
+    a = job["report"]["assessment"]
+    assert a["suspicion_score"] >= 35
+    findings = job["report"]["findings"]
+    regional = [f for f in findings if f.get("region")]
+    assert len(findings) >= 4
+    assert len(regional) >= 2
+
+
+def test_upload_serves_page_image(client):
+    job_id = _upload(client, "forged_demo.pdf")["job_id"]
+    _wait(client, job_id)
+    resp = client.get(f"/api/jobs/{job_id}/pages/page_0.png")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert len(resp.content) > 0
+
+    bad = client.get(f"/api/jobs/{job_id}/pages/..%2F..%2Fsecrets.png")
+    assert bad.status_code == 400

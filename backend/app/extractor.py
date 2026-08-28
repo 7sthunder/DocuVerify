@@ -1,3 +1,4 @@
+import threading
 from statistics import mean
 
 import pymupdf
@@ -7,15 +8,17 @@ from .document import Document, PageContext
 from .schemas import TextBox
 
 _ENGINE = None
+_ENGINE_LOCK = threading.Lock()
 
 
 def _engine():
     global _ENGINE
-    if _ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
+    with _ENGINE_LOCK:
+        if _ENGINE is None:
+            from rapidocr_onnxruntime import RapidOCR
 
-        _ENGINE = RapidOCR()
-    return _ENGINE
+            _ENGINE = RapidOCR()
+        return _ENGINE
 
 
 def _scale_coords(x0, y0, x1, y1, k):
@@ -56,7 +59,8 @@ def extract_native(pdf: pymupdf.Document, page_no: int, canvas_w: int = CANVAS_W
 
 
 def extract_ocr(image_path: str, page_no: int) -> list[TextBox]:
-    result, _ = _engine()(str(image_path))
+    with _ENGINE_LOCK:
+        result, _ = _engine()(str(image_path))
     boxes: list[TextBox] = []
     for item in result or []:
         quad, text, score = item
