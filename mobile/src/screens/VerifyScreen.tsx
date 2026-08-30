@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { JobStatus, PickedFile } from "../types";
-import { pollJob, uploadCompare, uploadDocument, autoFindServer, probeServer } from "../api";
+import { pollJob, uploadCompare, uploadDocument, autoFindServer, autoFindServers, uploadToAny, probeServer } from "../api";
 import { getServerUrlSync } from "../storage";
 import { useApp } from "../AppContext";
 import { colors, font, radius, spacing } from "../theme";
@@ -57,45 +57,36 @@ export function VerifyScreen({ active, onOpenSettings }: { active: boolean; onOp
     setFilename(docFile.name);
     setPhase("uploading");
     try {
-      // Always upload to a server we can actually reach — never a dead stored IP.
-      let base = getServerUrlSync();
-      if (base && !(await probeServer(base))) base = "";
-      if (!base) {
-        const found = await autoFindServer();
-        if (!found) {
-          runningRef.current = false;
-          setError(
-            "DocuVerify server is unreachable. Start the backend, then tap “Fix server connection” (or Settings → Detect)."
-          );
-          setPhase("error");
-          return;
-        }
-        base = found;
-        await setServerUrl(base, { pin: true });
-      }
+      // Build the ordered candidate list. A stored server that's still live is
+      // preferred (fast path); otherwise fall back to discovery. We then try
+      // EVERY candidate for the actual upload — a GET health probe is not proof
+      // a multipart POST will succeed from the phone (the 172.19.x Wi-Fi adapter
+      // answered GET but rejected uploads), so we must be ready to fall through.
+      const bases: string[] = [];
+      const stored = getServerUrlSync();
+      if (stored && (await probeServer(stored))) bases.push(stored);
       if (token !== runToken.current) return;
 
-      let jobIdResolved: string;
-      try {
-        const r = tplFile
-          ? await uploadCompare(docFile, tplFile, base)
-          : await uploadDocument(docFile, base);
-        jobIdResolved = r.job_id;
-      } catch (uploadError) {
-        // Transport-level failure on the pinned server: try to find another
-        // reachable backend (e.g. the USB localhost bridge) and retry once.
-        if (cancelledRef.current || runToken.current !== token) return;
-        const msg = uploadError instanceof Error ? uploadError.message : "";
-        if (!/Cannot reach the server|took too long/i.test(msg)) throw uploadError;
-        const alt = await autoFindServer();
-        if (!alt || cancelledRef.current || runToken.current !== token) throw uploadError;
-        if (alt !== base) await setServerUrl(alt, { pin: true });
-        const r = tplFile
-          ? await uploadCompare(docFile, tplFile, alt)
-          : await uploadDocument(docFile, alt);
-        jobIdResolved = r.job_id;
+      for (const c of await autoFindServers()) {
+        if (!bases.includes(c)) bases.push(c);
       }
-      let job_id = jobIdResolved;
+      if (bases.length === 0) {
+        runningRef.current = false;
+        setError(
+          "DocuVerify server is unreachable. Start the backend, then tap “Fix server connection” (or Settings → Detect)."
+        );
+        setPhase("error");
+        return;
+      }
+
+      const uploadResult = await uploadToAny(docFile, tplFile, bases);
+      // Pin the exact server that accepted the upload so report images load from
+      // the same working address.
+      if (uploadResult.base !== getServerUrlSync()) {
+        await setServerUrl(uploadResult.base, { pin: true });
+      }
+      let job_id = uploadResult.job_id;
+      if (token !== runToken.current) return;
       if (token !== runToken.current) return;
       setJobId(job_id);
       setPhase("processing");

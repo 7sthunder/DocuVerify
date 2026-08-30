@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { ArrowRight, FileIcon } from "./icons";
 import SectionHeading from "./SectionHeading";
 import { listJobs } from "../api";

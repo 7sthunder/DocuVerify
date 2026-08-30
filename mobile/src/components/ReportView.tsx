@@ -23,8 +23,9 @@ export function ReportView({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Finding | null>(null);
 
-  const sorted = [...report.findings].sort((a, b) => b.score - a.score);
-  const overlayFindings = showOverlay ? report.findings : [];
+  const findings = report.findings ?? [];
+  const sorted = [...findings].sort((a, b) => b.score - a.score);
+  const overlayFindings = showOverlay ? findings : [];
 
   const select = (f: Finding) => {
     setActiveId(f.id);
@@ -92,7 +93,7 @@ export function ReportView({
         </View>
       ) : null}
 
-      {report.pages.map((p) => (
+      {(report.pages ?? []).map((p) => (
         <PageViewer
           key={p.index}
           jobId={jobId}
@@ -106,10 +107,10 @@ export function ReportView({
 
       <View style={styles.findings}>
         <Tx size={font.md} weight="700" color={colors.slate900}>
-          Findings ({report.findings.length})
+           Findings ({(report.findings ?? []).length})
         </Tx>
         <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
-          {sorted.map((f) => (
+           {sorted.map((f) => (
             <FindingRow key={f.id} finding={f} isActive={f.id === activeId} onPress={() => select(f)} />
           ))}
         </View>

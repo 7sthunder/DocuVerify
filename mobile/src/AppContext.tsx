@@ -10,8 +10,9 @@ import {
   saveHistory,
   saveServerUrl,
   saveSession,
+  unpinServer,
 } from "./storage";
-import { signIn as apiSignIn, signOut as apiSignOut, autoFindServer, probeServer } from "./api";
+import { signIn as apiSignIn, signOut as apiSignOut, autoFindServer, probeServer, detectDefaultServer, isDockerNetworkURL } from "./api";
 
 interface AppContextValue {
   booted: boolean;
@@ -37,20 +38,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     (async () => {
-      const [url, sess, hist] = await Promise.all([
+      const [rawUrl, sess, hist] = await Promise.all([
         loadServerUrl(),
         loadSession(),
         loadHistory(),
       ]);
+      let url: string | null = rawUrl;
 
-      // Self-heal: if there is NO user-pinned server and the saved one is
-      // unreachable, probe likely candidates and fall back to the first that
-      // answers /api/health. A user-pinned address is never overridden.
+      // Self-heal: a previously saved server address may be stale.
+      //  - A Docker/container private IP (172.16.0.0/12) is unreachable from a
+      //    physical device, so we always discard it and re-discover.
+      //  - Any other non-pinned address that no longer answers /api/health is
+      //    replaced by the first candidate that does.
+      //  - With no saved address at all we attempt discovery once at boot.
       let effectiveUrl = url;
-      if (url) {
+      if (url && isDockerNetworkURL(url)) {
+        await unpinServer();
+        await saveServerUrl("");
+        effectiveUrl = "";
+        url = "";
+      }
+      if (effectiveUrl) {
         const pinned = await isPinnedServer();
         if (!pinned) {
-          const ok = await probeServer(url);
+          const ok = await probeServer(url as string);
           if (!ok) {
             const found = await autoFindServer();
             if (found) {
@@ -58,6 +69,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               effectiveUrl = found;
             }
           }
+        }
+      } else {
+        const found = await autoFindServer();
+        if (found) {
+          await saveServerUrl(found);
+          effectiveUrl = found;
         }
       }
 

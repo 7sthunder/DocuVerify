@@ -1,16 +1,40 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { HistoryItem } from "../types";
-import { useApp } from "../AppContext";
+import type { HistoryItem, JobSummary } from "../types";
+import { listJobs } from "../api";
 import { colors, font, radius, spacing } from "../theme";
 import { Card, Section, Tx } from "../components/Ui";
 import { ReportDetail } from "../components/ReportDetail";
 import { formatDate, riskTone } from "../utils";
 
+function toHistoryItem(j: JobSummary): HistoryItem {
+  return {
+    jobId: j.id,
+    filename: j.filename,
+    createdAt: j.created,
+    score: j.score,
+    risk: j.risk_level,
+    template: null,
+    status: j.status === "completed" ? "complete" : "failed",
+    error: null,
+    report: null,
+  };
+}
+
 export function HistoryScreen({ active }: { active: boolean }) {
-  const { history } = useApp();
+  const [jobs, setJobs] = useState<JobSummary[]>([]);
+  const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<HistoryItem | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    listJobs()
+      .then((rows) => { if (alive) { setJobs(rows); } })
+      .catch(() => { if (alive) { setJobs([]); } })
+      .finally(() => { if (alive) { setLoading(false); } });
+    return () => { alive = false; };
+  }, []);
 
   if (selected) {
     return <ReportDetail item={selected} onBack={() => setSelected(null)} active={active} />;
@@ -23,7 +47,16 @@ export function HistoryScreen({ active }: { active: boolean }) {
         title="Verification history"
         description="Every document you verify is recorded here with its score, risk level and findings."
       />
-      {history.length === 0 ? (
+      {loading ? (
+        <Card>
+          <View style={styles.empty}>
+            <Ionicons name="time-outline" size={30} color={colors.slate300} />
+            <Tx size={font.sm} color={colors.slate500} style={{ textAlign: "center", marginTop: spacing.sm }}>
+              Loading verifications…
+            </Tx>
+          </View>
+        </Card>
+      ) : jobs.length === 0 ? (
         <Card>
           <View style={styles.empty}>
             <Ionicons name="time-outline" size={30} color={colors.slate300} />
@@ -34,10 +67,10 @@ export function HistoryScreen({ active }: { active: boolean }) {
         </Card>
       ) : (
         <View style={{ gap: spacing.sm }}>
-          {history.map((r) => {
-            const tone = riskTone(r.risk);
+          {jobs.map((r) => {
+            const tone = riskTone(r.risk_level);
             return (
-              <TouchableOpacity key={r.jobId} onPress={() => setSelected(r)}>
+              <TouchableOpacity key={r.id} onPress={() => setSelected(toHistoryItem(r))}>
                 <Card padded={false} style={styles.row}>
                   <Ionicons name="document-attach" size={18} color={colors.indigo500} />
                   <View style={{ flex: 1, minWidth: 0 }}>
@@ -45,30 +78,17 @@ export function HistoryScreen({ active }: { active: boolean }) {
                       {r.filename}
                     </Tx>
                     <Tx size={font.xs} color={colors.slate400}>
-                      {formatDate(r.createdAt)}
+                        {formatDate(r.created * 1000)}
                     </Tx>
                   </View>
-                  {r.template ? (
-                    <Ionicons name="git-compare-outline" size={15} color={colors.indigo400} />
-                  ) : null}
-                  {r.status === "failed" ? (
-                    <View style={[styles.riskPill, { backgroundColor: colors.red100 }]}>
-                      <Tx size={font.xxs} weight="700" color={colors.red700}>
-                        FAILED
-                      </Tx>
-                    </View>
-                  ) : (
-                    <View style={[styles.riskPill, { backgroundColor: tone.bg }]}>
-                      <Tx size={font.xxs} weight="700" color={tone.fg}>
-                        {r.risk ?? "—"}
-                      </Tx>
-                    </View>
-                  )}
-                  {r.score != null ? (
-                    <Tx size={font.sm} weight="700" color={colors.slate800}>
-                      {Math.round(r.score)}
+                  <View style={[styles.riskPill, { backgroundColor: tone.bg }]}>
+                    <Tx size={font.xxs} weight="700" color={tone.fg}>
+                      {r.risk_level}
                     </Tx>
-                  ) : null}
+                  </View>
+                  <Tx size={font.sm} weight="700" color={colors.slate800}>
+                    {Math.round(r.score)}
+                  </Tx>
                 </Card>
               </TouchableOpacity>
             );

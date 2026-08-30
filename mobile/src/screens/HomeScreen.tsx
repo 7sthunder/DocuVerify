@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import type { JobSummary } from "../types";
+import { listJobs } from "../api";
 import { useApp } from "../AppContext";
 import { colors, font, radius, shadow, spacing } from "../theme";
 import { Card, Section, Tx } from "../components/Ui";
@@ -34,7 +37,27 @@ export function HomeScreen({
   onOpenTemplates: () => void;
 }) {
   const { history } = useApp();
+  const [serverJobs, setServerJobs] = useState<JobSummary[]>([]);
   const recent = history.slice(0, 3);
+
+  useEffect(() => {
+    let alive = true;
+    listJobs()
+      .then((rows) => { if (alive) { setServerJobs(rows); } })
+      .catch(() => { /* keep using local history */ });
+    return () => { alive = false; };
+  }, []);
+
+  const recentJobs: JobSummary[] = serverJobs.length > 0
+    ? serverJobs.slice(0, 3)
+    : history.slice(0, 3).map((h) => ({
+        id: h.jobId,
+        filename: h.filename,
+        created: h.createdAt,
+        status: "completed" as const,
+        score: h.score ?? 0,
+        risk_level: (h.risk ?? "LOW") as "LOW" | "MEDIUM" | "HIGH",
+      }));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -130,7 +153,7 @@ export function HomeScreen({
           onAction={history.length ? onOpenHistory : undefined}
           actionLabel={history.length ? "View all" : undefined}
         />
-        {recent.length === 0 ? (
+        {recentJobs.length === 0 ? (
           <Card>
             <View style={styles.emptyRow}>
               <Ionicons name="time-outline" size={22} color={colors.slate400} />
@@ -144,10 +167,10 @@ export function HomeScreen({
           </Card>
         ) : (
           <View style={{ gap: spacing.sm }}>
-            {recent.map((r) => {
-              const tone = riskTone(r.risk);
+            {recentJobs.map((r) => {
+              const tone = riskTone(r.risk_level);
               return (
-                <TouchableOpacity key={r.jobId} onPress={onOpenHistory}>
+                <TouchableOpacity key={r.id} onPress={onOpenHistory}>
                   <Card padded={false} style={styles.historyRow}>
                     <Ionicons name="document-attach" size={18} color={colors.indigo500} />
                     <View style={{ flex: 1, minWidth: 0 }}>
@@ -155,12 +178,12 @@ export function HomeScreen({
                         {r.filename}
                       </Tx>
                       <Tx size={font.xs} color={colors.slate400}>
-                        {formatDate(r.createdAt)}
+                        {formatDate(r.created * 1000)}
                       </Tx>
                     </View>
                     <View style={[styles.riskPill, { backgroundColor: tone.bg }]}>
                       <Tx size={font.xxs} weight="700" color={tone.fg}>
-                        {r.risk ?? "—"}
+                        {r.risk_level}
                       </Tx>
                     </View>
                   </Card>

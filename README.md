@@ -211,18 +211,16 @@ Copy the templates and fill in what you need. **Never commit real keys.**
 
 ## 8. Run
 
-### Development (three terminals)
+### Development (two terminals)
 
 ```powershell
-# Terminal 1 — backend (API on :8000)
+# Terminal 1 — backend (API on :8000, bound to all interfaces so a phone
+# on the same Wi-Fi / hotspot can reach it). Starts the bundled auth
+# service (:4000) automatically and stops it on shutdown.
 cd backend
-.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# Terminal 2 — auth service (seeds the sample user on first start)
-cd auth
-npm run dev
-
-# Terminal 3 — frontend dev server (hot reload + /api proxies)
+# Terminal 2 — frontend dev server (hot reload + /api proxies)
 cd frontend
 npm run dev
 ```
@@ -234,7 +232,7 @@ email:    test@docu.com
 password: password
 ```
 
-The Vite dev server proxies `/api/auth` → auth service (:4000) and `/api/*` → backend (:8000).
+The Vite dev server proxies `/api/auth` → auth service (:4000) and `/api/*` → backend (:8000). The auth service is managed by the backend process, so there is no separate auth terminal to run.
 
 ### Production-like single server
 
@@ -242,10 +240,10 @@ The Vite dev server proxies `/api/auth` → auth service (:4000) and `/api/*` �
 cd frontend
 npm run build          # emits frontend/dist
 cd ..\backend
-.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+.venv\Scripts\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-FastAPI serves the built SPA and the API from one port (**http://localhost:8000**); it still proxies `/api/auth/*` to the auth service, so keep Terminal 2 running.
+FastAPI serves the built SPA and the API from one port (**http://localhost:8000**); it still proxies `/api/auth/*` to the auth service, which the backend starts for you.
 
 ---
 

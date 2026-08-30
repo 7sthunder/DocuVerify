@@ -3,6 +3,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -105,11 +107,63 @@ async def _cleanup_loop():
                 _jobs.pop(job_id, None)
 
 
+AUTH_DIR = ROOT.parent.parent / "auth"
+
+def _auth_port_ready(port: int = 4000, timeout: float = 1.0) -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _start_auth_service() -> subprocess.Popen | None:
+    if not AUTH_DIR.exists():
+        return None
+    tsx = AUTH_DIR / "node_modules" / ".bin" / "tsx.cmd" if os.name == "nt" else AUTH_DIR / "node_modules" / ".bin" / "tsx"
+    if not tsx.exists():
+        print("[auth] tsx not found; run `npm install` in /auth first", flush=True)
+        return None
+    env = dict(os.environ)
+    env.setdefault("AUTH_PORT", "4000")
+    proc = subprocess.Popen(
+        [str(tsx), "server/index.ts"],
+        cwd=str(AUTH_DIR),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    for _ in range(100):
+        if proc.poll() is not None:
+            print("[auth] subprocess exited early", flush=True)
+            return None
+        if _auth_port_ready():
+            print("[auth] bundled auth service is ready on :4000", flush=True)
+            return proc
+        time.sleep(0.3)
+    print("[auth] gave up waiting for auth service", flush=True)
+    return proc
+
+
+def _stop_auth_service(proc: subprocess.Popen | None):
+    if proc is None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    auth_proc = _start_auth_service()
     task = asyncio.create_task(_cleanup_loop())
     yield
     task.cancel()
+    _stop_auth_service(auth_proc)
 
 
 app = FastAPI(title="DocuVerify", version="0.1.0", lifespan=lifespan)
